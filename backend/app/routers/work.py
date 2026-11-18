@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..calc import Context, compute_line
+from ..dates import format_dates, parse_dates
 from ..db import get_db
 from ..models import (Client, InspectorInvoice, Inspector, Job, JobLine, MonthClose, Request, SalesInvoice, User,
                       inspector_invoice_jobs)
@@ -223,3 +224,34 @@ def delete_line(lid: int, db: Session = Depends(get_db), _=Depends(need("delete"
     line.deleted = True
     _commit(db)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- calendar of agreed dates
+@r.get("/calendar")
+def calendar(month: str, db: Session = Depends(get_db), _=Depends(need("read"))):
+    """Every agreed inspection day in `month`, read from the lines' «Даты» field."""
+    y, m = int(month[:4]), int(month[5:7])
+    near = {f"{y - (m == 1)}-{(m - 2) % 12 + 1:02d}", month, f"{y + (m == 12)}-{m % 12 + 1:02d}"}
+    users = {u.id: u.initials for u in db.scalars(select(User))}
+    insp = {i.id: i.name for i in db.scalars(select(Inspector))}
+    clients = {c.id: c.name for c in db.scalars(select(Client))}
+    out = []
+    for l in db.scalars(select(JobLine).where(JobLine.deleted.is_(False), JobLine.month.in_(near))):
+        job = l.job
+        if job.deleted:
+            continue
+        for d in parse_dates(l.dates_text, l.month):
+            if d.year == y and d.month == m:
+                out.append({"date": d.isoformat(), "job_id": job.id, "job_number": job.job_number, "line_id": l.id,
+                            "client": clients.get(job.client_id), "inspector": insp.get(l.inspector_id),
+                            "country": job.country, "status": job.status, "owner": users.get(job.owner_id)})
+    return sorted(out, key=lambda x: (x["date"], x["job_number"]))
+
+
+@r.post("/dates/normalize")
+def normalize_dates(data: dict, _=Depends(need("read"))):
+    """Turn a list of ISO dates into the «Даты» text, and back."""
+    if "dates" in data:
+        import datetime as _dt
+        return {"text": format_dates([_dt.date.fromisoformat(x) for x in data["dates"]])}
+    return {"dates": [d.isoformat() for d in parse_dates(data.get("text"), data.get("month"))]}

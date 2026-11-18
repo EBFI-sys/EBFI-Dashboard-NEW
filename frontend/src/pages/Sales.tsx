@@ -27,7 +27,7 @@ export default function Sales() {
     <div className="page">
       <header className="page-head"><div><h1>Инвойсы клиентам</h1>
         <p className="lede">GST считается автоматически для клиентов из Индии: CGST + SGST в своём штате, IGST — в другом. Для каждого такого инвойса создаётся запись в реестре TDS.</p></div></header>
-      <CrudTable endpoint="/sales-invoices" title="Реестр инвойсов" fields={fields} csvName="sales-invoices.csv"
+      <CrudTable periodKey="date" endpoint="/sales-invoices" title="Реестр инвойсов" fields={fields} csvName="sales-invoices.csv"
         defaults={{ status: "Not Verified", date: new Date().toISOString().slice(0, 10), currency: "USD" }}
         toolbar={(_, reload) => <button className="btn" onClick={() => setFromLines(() => reload)}>Инвойс из строк работ</button>} />
       {fromLines && <FromLines onClose={() => setFromLines(null)} onDone={fromLines} />}

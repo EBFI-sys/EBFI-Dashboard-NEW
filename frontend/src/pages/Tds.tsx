@@ -19,7 +19,7 @@ export default function Tds() {
     <div className="page">
       <header className="page-head"><div><h1>Реестр TDS</h1>
         <p className="lede">TDS, удержанный индийскими клиентами (10% от суммы без GST). Это зачёт по налогу, он не уменьшает прибыль. Записи создаются автоматически из инвойсов; здесь отмечается, отражён ли TDS в Form 26AS и зачтён ли.</p></div></header>
-      <CrudTable endpoint="/tds" title="Записи TDS" fields={fields} csvName="tds.csv" writeRight="write" allowCreate={false}
+      <CrudTable periodKey="invoice_date" endpoint="/tds" title="Записи TDS" fields={fields} csvName="tds.csv" writeRight="write" allowCreate={false}
         toolbar={(rows) => <span className="muted">Ожидается: {inr(rows.filter((r) => r.status !== "Зачтён").reduce((a, r) => a + r.amount_inr, 0))}</span>} />
     </div>
   );

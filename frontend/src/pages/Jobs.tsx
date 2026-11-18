@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, downloadCsv, inr, num } from "../api";
 import { useAuth } from "../auth";
 import { EditForm, Field } from "../components/CrudTable";
+import { JobsCalendar } from "../components/Calendar";
 import { ErrorLine, Pill, useAsync } from "../components/ui";
 import { JOB_STATUSES } from "../refs";
 
@@ -24,12 +25,13 @@ export default function Jobs() {
   const [status, setStatus] = useState("В работе,Пауза");
   const [q, setQ] = useState("");
   const [add, setAdd] = useState(false);
+  const [cal, setCal] = useState(false);
   const { data, error, loading } = useAsync(() => api.get<any[]>(`/jobs?status=${encodeURIComponent(status)}`), [status]);
   const rows = (data ?? []).filter((j) => !q || `${j.job_number} ${j.client_name} ${j.vendor} ${j.country}`.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <div className="page">
-      <header className="page-head"><h1>Работы</h1></header>
+      <header className="page-head"><h1>Работы</h1><button className="btn" onClick={() => setCal(true)}>Календарь дат</button></header>
       <section className="card">
         <div className="toolbar">
           <div className="seg">
@@ -64,6 +66,7 @@ export default function Jobs() {
           </table>
         </div>
       </section>
+      {cal && <JobsCalendar onClose={() => setCal(false)} />}
       {add && (
         <EditForm title="Новая работа" fields={jobFields} initial={{ status: "В работе" }} onCancel={() => setAdd(false)}
           onSave={async (d) => { const j = await api.post("/jobs", d); nav(`/jobs/${j.id}`); }} />

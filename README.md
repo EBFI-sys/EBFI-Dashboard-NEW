@@ -54,21 +54,25 @@ docker compose exec api python -m scripts.create_admin   # печатает вр
 
 Для клонирования приватного репозитория GitHub спросит логин и пароль: логин — ваш GitHub, пароль — токен с правом Contents: Read.
 
-## Импорт ноября (30 ноября)
+## Импорт стартовых данных (октябрь и ноябрь 2026)
 
-1. В Google Таблицах: Файл → Скачать → Microsoft Excel для каждой из четырёх таблиц.
-2. Скопировать файлы на сервер в `/opt/ebfi/app/import/` под именами `pnl.xlsx`, `requests.xlsx`, `sales.xlsx`, `invoices.xlsx`:
+1. Скачать четыре Google Таблицы как Excel и назвать `pnl.xlsx`, `requests.xlsx`, `sales.xlsx`, `invoices.xlsx`.
+2. Скопировать на сервер: `scp pnl.xlsx requests.xlsx sales.xlsx invoices.xlsx deploy@206.189.135.219:/opt/ebfi/app/import/`
+3. Запустить:
    ```bash
-   scp pnl.xlsx requests.xlsx sales.xlsx invoices.xlsx deploy@206.189.135.219:/opt/ebfi/app/import/
-   ```
-3. Запустить импорт (`--reset` стирает ранее импортированные данные, пользователи остаются):
-   ```bash
-   docker compose exec api python -m scripts.import_xlsx --reset --month 2026-11 \
+   docker compose exec api python -m scripts.import_xlsx --reset \
      --pnl /data/import/pnl.xlsx --requests /data/import/requests.xlsx \
      --sales /data/import/sales.xlsx --invoices /data/import/invoices.xlsx
    ```
 
-Импортируется: все строки P&L за ноябрь, работы прошлых месяцев со статусом «В работе»/«Пауза» (помечаются «до ноября»), ноябрьские и все открытые заявки, весь реестр инвойсов клиентам и счета инспекторов. Строки без Job number получают номер вида `БН-2026-11-1`. «Чья»: Л → LM, М → MB, С → SV, Лю → LR; Д, А, Т — архивные координаторы.
+Что попадает в систему:
+
+- строки P&L, заявки, инвойсы клиентам и счета инспекторов только за октябрь и ноябрь 2026 (`--months` меняет набор месяцев);
+- справочник инспекторов — все, кто работал за всю историю таблицы, с объединением вариантов написания (`scripts/names.py` плюс ручной список `MANUAL_MERGE` в `import_xlsx.py`); варианты сохраняются в примечании инспектора;
+- справочник клиентов — все названия за всю историю, каждое юрлицо отдельно;
+- курсы USD и EUR за эти месяцы из колонки «$/€».
+
+`--reset` стирает рабочие данные и справочники (пользователи остаются), поэтому команду можно повторять. Строки без Job number получают номер вида `БН-2026-11-1`. «Чья»: Л → LM, М → MB, С → SV, Лю → LR; Д, А, Т — архивные координаторы.
 
 ## Обновление
 

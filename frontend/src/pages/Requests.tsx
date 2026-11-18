@@ -14,7 +14,7 @@ const fields: Field[] = [
   { key: "final_client", label: "Конечный клиент", list: false },
   { key: "country", label: "Страна", required: true },
   { key: "factory", label: "Завод / адрес", wide: true },
-  { key: "dates_text", label: "Даты" },
+  { key: "dates_text", label: "Даты", type: "dates" },
   { key: "client_rate", label: "Нам платят", type: "money", currencyKey: "client_currency" },
   { key: "client_currency", label: "Валюта клиента", type: "select", options: CURRENCIES, list: false },
   { key: "inspector_rate", label: "Ставка инспектора", type: "money", currencyKey: "inspector_currency" },

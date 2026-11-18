@@ -32,7 +32,7 @@ export default function Payouts() {
     <div className="page">
       <header className="page-head"><div><h1>Счета инспекторов</h1>
         <p className="lede">Инспекторы присылают свои счета — здесь их регистрируют, прикладывают PDF и отмечают оплату. Пометка «≠ строкам» значит, что сумма не совпадает с MD × ставка в привязанных работах.</p></div></header>
-      <CrudTable endpoint="/inspector-invoices" title={show === "open" ? "К оплате" : "Все счета"} fields={fields} csvName="inspector-invoices.csv"
+      <CrudTable periodKey="invoice_date" endpoint="/inspector-invoices" title={show === "open" ? "К оплате" : "Все счета"} fields={fields} csvName="inspector-invoices.csv"
         defaults={{ currency: "USD", paid: false, invoice_date: new Date().toISOString().slice(0, 10), job_ids: [] }}
         filter={(r) => show === "all" || !r.paid}
         toolbar={() => (

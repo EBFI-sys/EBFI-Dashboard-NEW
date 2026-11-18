@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
-import { api, dateLabel, downloadCsv, money, num } from "../api";
+import { api, dateLabel, downloadCsv, money, monthLabel, num } from "../api";
 import { useAuth } from "../auth";
 import { invalidateRef, useRef_ } from "../refs";
+import { DatesField } from "./Calendar";
 import { ErrorLine, Modal, Pill, Toast, useAsync } from "./ui";
 
 export type Field = {
   key: string;
   label: string;
-  type?: "text" | "number" | "money" | "date" | "select" | "bool" | "textarea" | "ref" | "multiref" | "status";
+  type?: "text" | "number" | "money" | "date" | "select" | "bool" | "textarea" | "ref" | "multiref" | "status" | "dates";
+  monthKey?: string; // dates field: which field holds the line month
   options?: string[];
   ref?: string; // reference list endpoint, e.g. "clients"
   refLabel?: string;
@@ -34,7 +36,15 @@ type Props = {
   csvName?: string;
   onRowClick?: (row: any) => void;
   allowCreate?: boolean;
+  periodKey?: string; // date field to filter by period (month or custom range)
 };
+
+/** Indian financial year quarter: 2026-11-15 -> "Q3 FY27". */
+export function quarterOf(d: string) {
+  const y = Number(d.slice(0, 4)), m = Number(d.slice(5, 7));
+  const fy = m >= 4 ? y + 1 : y;
+  return `Q${Math.floor(((m - 4 + 12) % 12) / 3) + 1} FY${String(fy).slice(2)}`;
+}
 
 function RefSelect({ f, value, onChange }: { f: Field; value: any; onChange: (v: any) => void }) {
   const rows = useRef_(f.ref!);
@@ -74,8 +84,10 @@ function MultiRef({ f, value, onChange }: { f: Field; value: number[]; onChange:
   );
 }
 
-export function FieldInput({ f, value, onChange }: { f: Field; value: any; onChange: (v: any) => void }) {
+export function FieldInput({ f, value, onChange, row }: { f: Field; value: any; onChange: (v: any) => void; row?: any }) {
   switch (f.type) {
+    case "dates":
+      return <DatesField value={value} onChange={onChange} month={f.monthKey ? row?.[f.monthKey] : undefined} />;
     case "number":
     case "money":
       return <input type="number" step="any" value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)} />;
@@ -156,9 +168,9 @@ export function EditForm({ fields, initial, onSave, onCancel, title }: {
     <Modal title={title} onClose={onCancel} wide={fields.filter((f) => f.form !== false).length > 8}>
       <form onSubmit={submit} className="form-grid">
         {fields.filter((f) => f.form !== false).map((f) => (
-          <label key={f.key} className={"field" + (f.wide || f.type === "textarea" || f.type === "multiref" ? " wide" : "") + (f.type === "bool" ? " inline" : "")}>
+          <label key={f.key} className={"field" + (f.wide || f.type === "textarea" || f.type === "multiref" || f.type === "dates" ? " wide" : "") + (f.type === "bool" ? " inline" : "")}>
             <span>{f.label}{f.required && " *"}</span>
-            <FieldInput f={f} value={data[f.key]} onChange={(v) => setData({ ...data, [f.key]: v })} />
+            <FieldInput f={f} value={data[f.key]} row={data} onChange={(v) => setData((d: any) => ({ ...d, [f.key]: v }))} />
             {f.hint && <small>{f.hint}</small>}
           </label>
         ))}
@@ -177,6 +189,8 @@ export default function CrudTable(p: Props) {
   const { data, error, loading, reload } = useAsync(() => api.get<any[]>(p.endpoint + (p.query ? `?${p.query}` : "")), [p.endpoint, p.query]);
   const [edit, setEdit] = useState<any | null>(null);
   const [q, setQ] = useState("");
+  const [period, setPeriod] = useState<string>("all");
+  const [range, setRange] = useState<{ from: string; to: string }>({ from: "", to: "" });
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const canWrite = can(p.writeRight ?? "write");
@@ -184,13 +198,32 @@ export default function CrudTable(p: Props) {
 
   const rows = useMemo(() => {
     let r = (data ?? []).filter((x) => (p.filter ? p.filter(x) : true));
+    if (p.periodKey && period !== "all") {
+      const k = p.periodKey;
+      r = r.filter((x) => {
+        const d: string = (x[k] ?? "").slice(0, 10);
+        if (!d) return false;
+        if (period === "range") return (!range.from || d >= range.from) && (!range.to || d <= range.to);
+        if (period.startsWith("Q")) return quarterOf(d) === period;
+        return d.slice(0, 7) === period;
+      });
+    }
     if (q) {
       const s = q.toLowerCase();
       r = r.filter((x) => Object.values(x).some((v) => v != null && String(v).toLowerCase().includes(s)));
     }
     if (sort) r = [...r].sort((a, b) => (a[sort.key] ?? "") > (b[sort.key] ?? "") ? sort.dir : -sort.dir);
     return r;
-  }, [data, q, sort, p.filter]);
+  }, [data, q, sort, p.filter, p.periodKey, period, range]);
+
+  const periods = useMemo(() => {
+    if (!p.periodKey) return { months: [] as string[], quarters: [] as string[] };
+    const ds = (data ?? []).map((x) => (x[p.periodKey!] ?? "").slice(0, 10)).filter(Boolean);
+    return {
+      months: [...new Set(ds.map((d) => d.slice(0, 7)))].sort().reverse(),
+      quarters: [...new Set(ds.map(quarterOf))].sort().reverse(),
+    };
+  }, [data, p.periodKey]);
 
   const save = async (d: any) => {
     if (d.id) await api.patch(`${p.endpoint}/${d.id}`, d);
@@ -215,6 +248,23 @@ export default function CrudTable(p: Props) {
         <h2>{p.title}</h2>
         <span className="muted">{loading ? "Загрузка…" : `${rows.length} записей`}</span>
         <div className="spacer" />
+        {p.periodKey && (
+          <>
+            <select value={period} onChange={(e) => setPeriod(e.target.value)} aria-label="Период">
+              <option value="all">Весь период</option>
+              {periods.months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+              {periods.quarters.map((qq) => <option key={qq} value={qq}>{qq.replace("Q", "Квартал ")}</option>)}
+              <option value="range">Свой период…</option>
+            </select>
+            {period === "range" && (
+              <span className="range">
+                <input type="date" aria-label="С" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} />
+                <span>—</span>
+                <input type="date" aria-label="По" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} />
+              </span>
+            )}
+          </>
+        )}
         <input className="search" placeholder="Поиск" value={q} onChange={(e) => setQ(e.target.value)} />
         {p.toolbar?.(rows, reload)}
         <button className="btn ghost" onClick={() => downloadCsv(p.csvName ?? "export.csv", rows, cols.map((c) => ({ key: c.key, label: c.label })))}>CSV</button>

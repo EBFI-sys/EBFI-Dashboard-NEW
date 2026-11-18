@@ -10,7 +10,7 @@ import { jobFields } from "./Jobs";
 export const lineFields: Field[] = [
   { key: "month", label: "Месяц (ГГГГ-ММ)", required: true },
   { key: "inspector_id", label: "Инспектор", type: "ref", ref: "inspectors" },
-  { key: "dates_text", label: "Даты работ", wide: true },
+  { key: "dates_text", label: "Согласованные даты", type: "dates", monthKey: "month" },
   { key: "quantity", label: "Количество (MD, часы, тонны)", type: "number", required: true },
   { key: "unit", label: "Единица", type: "select", options: ["day", "hour", "ton", "lump"], required: true },
   { key: "currency", label: "Валюта", type: "select", options: CURRENCIES, required: true },
