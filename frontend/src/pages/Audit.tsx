@@ -4,7 +4,7 @@ import { ErrorLine, useAsync } from "../components/ui";
 
 const TABLES: Record<string, string> = {
   "": "Все", inspectors: "Инспекторы (вкл. реквизиты)", inspector_invoices: "Счета инспекторов", sales_invoices: "Инвойсы клиентам",
-  jobs: "Работы", job_lines: "Строки P&L", requests: "Заявки", clients: "Клиенты", fx_rates: "Курсы", users: "Пользователи",
+  jobs: "Табель (работы)", vendors: "Заводы", job_lines: "Строки P&L", requests: "Заявки", clients: "Клиенты", fx_rates: "Курсы", users: "Пользователи",
 };
 
 export default function Audit() {

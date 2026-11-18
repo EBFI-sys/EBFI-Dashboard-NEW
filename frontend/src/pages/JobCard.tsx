@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, dateLabel, inr, money, monthLabel, num, pct, thisMonth } from "../api";
+import { api, dateLabel, money, monthLabel, num, pct, thisMonth } from "../api";
 import { useAuth } from "../auth";
 import { EditForm, Field } from "../components/CrudTable";
 import { ErrorLine, Pill, Toast, useAsync } from "../components/ui";
 import { CURRENCIES } from "../refs";
 import { jobFields } from "./Jobs";
+import { CurrencySwitch, useCurrency } from "../currency";
+import DataTable, { Col } from "../components/DataTable";
 
 export const lineFields: Field[] = [
   { key: "month", label: "Месяц (ГГГГ-ММ)", required: true },
@@ -31,10 +33,38 @@ export default function JobCard() {
   const [editJob, setEditJob] = useState(false);
   const [line, setLine] = useState<any | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const { cur, conv, fmt } = useCurrency();
   const hist = useAsync(() => api.get(`/audit?table=jobs&record_id=${id}`), [id, j]);
 
   if (error) return <div className="page"><ErrorLine error={error} /></div>;
   if (!j) return <div className="page muted">Загрузка…</div>;
+
+  const total = (k: string) => {
+    let t = 0;
+    for (const l of j.lines) {
+      const v = conv(l.calc[k], l.month);
+      if (v == null) return null;
+      t += v;
+    }
+    return t;
+  };
+  const lineCols: Col[] = [
+    { key: "month", label: "Месяц", render: (l) => <>{monthLabel(l.month)}{l.calc.closed && <span className="pill mute">закрыт</span>}</> },
+    { key: "inspector_name", label: "Инспектор", text: (l) => l.inspector_name ?? (l.no_subcontractor ? "без подрядчика" : null),
+      render: (l) => l.inspector_name ?? (l.no_subcontractor ? "без подрядчика" : "—") },
+    { key: "dates_text", label: "Даты", cls: "wrap" },
+    { key: "quantity", label: "Кол-во", align: "r", render: (l) => `${num(l.quantity, 2).replace(/\.00$/, "")} ${l.unit !== "day" ? l.unit : ""}` },
+    { key: "client_rate", label: "Ставка клиенту", align: "r", render: (l) => money(l.client_rate, l.currency) },
+    { key: "inspector_rate", label: "Ставка инсп.", align: "r", render: (l) => (l.no_subcontractor ? "—" : money(l.inspector_rate, l.currency)) },
+    { key: "fx", label: "Курс", align: "r", text: (l) => l.calc.fx,
+      render: (l) => <span title={l.calc.fx_provisional ? `Предварительный курс из ${l.calc.fx_source_month}` : ""}>{l.currency === "INR" ? "—" : num(l.calc.fx, 2)}{l.calc.fx_provisional && l.currency !== "INR" && " *"}</span> },
+    ...(["base_inr", "gst_inr", "tds_inr", "admin_inr", "cost_inr", "rko_inr", "net_inr"] as const).map((k): Col => ({
+      key: k, label: { base_inr: "Выручка", gst_inr: "GST", tds_inr: "TDS", admin_inr: "Админка", cost_inr: "Подряд", rko_inr: "РКО", net_inr: "Прибыль" }[k] + `, ${cur}`,
+      align: "r", text: (l) => l.calc[k],
+      render: (l) => k === "net_inr" ? <b className={(l.calc[k] ?? 0) < 0 ? "neg" : ""}>{fmt(l.calc[k], l.month)}</b> : fmt(l.calc[k], l.month),
+    })),
+    { key: "margin", label: "Маржа", align: "r", text: (l) => l.calc.margin, render: (l) => pct(l.calc.margin) },
+  ];
 
   const saveLine = async (d: any) => {
     if (d.id) await api.patch(`/lines/${d.id}`, d);
@@ -48,16 +78,19 @@ export default function JobCard() {
     <div className="page">
       <header className="page-head">
         <div>
-          <p className="crumbs"><Link to="/jobs">Работы</Link> /</p>
+          <p className="crumbs"><Link to="/jobs">Табель</Link> /</p>
           <h1 className="mono">{j.job_number} <Pill status={j.status} /></h1>
           <p className="lede">{j.client_name} · {j.country ?? "—"} · {j.vendor ?? "завод не указан"} · Чья: {j.owner ?? "—"}</p>
         </div>
-        {can("write") && <button className="btn" onClick={() => setEditJob(true)}>Изменить работу</button>}
+        <div className="head-actions">
+          <CurrencySwitch />
+          {can("write") && <button className="btn" onClick={() => setEditJob(true)}>Изменить работу</button>}
+        </div>
       </header>
 
       <div className="kpis">
-        <div className="kpi card"><span className="kpi-label">Выручка</span><span className="kpi-value">{inr(j.totals.base_inr)}</span></div>
-        <div className="kpi card"><span className="kpi-label">Чистая прибыль</span><span className={"kpi-value " + (j.totals.net_inr < 0 ? "bad" : "")}>{inr(j.totals.net_inr)}</span></div>
+        <div className="kpi card"><span className="kpi-label">Выручка</span><span className="kpi-value">{money(total("base_inr"), cur)}</span></div>
+        <div className="kpi card"><span className="kpi-label">Чистая прибыль</span><span className={"kpi-value " + (j.totals.net_inr < 0 ? "bad" : "")}>{money(total("net_inr"), cur)}</span></div>
         <div className="kpi card"><span className="kpi-label">Человеко-дни</span><span className="kpi-value">{num(j.totals.man_days, 1)}</span></div>
       </div>
 
@@ -70,36 +103,8 @@ export default function JobCard() {
               client_rate: j.lines.at(-1)?.client_rate, inspector_rate: j.lines.at(-1)?.inspector_rate, inspector_id: j.lines.at(-1)?.inspector_id })}>Добавить строку</button>
           )}
         </div>
-        <div className="table-wrap">
-          <table>
-            <thead><tr>
-              <th>Месяц</th><th>Инспектор</th><th>Даты</th><th className="r">Кол-во</th><th className="r">Ставка клиенту</th><th className="r">Ставка инсп.</th>
-              <th className="r">Курс</th><th className="r">Выручка ₹</th><th className="r">GST</th><th className="r">TDS</th><th className="r">Админка</th>
-              <th className="r">Подряд</th><th className="r">РКО</th><th className="r">Прибыль ₹</th><th className="r">Маржа</th><th />
-            </tr></thead>
-            <tbody>
-              {j.lines.map((l: any) => (
-                <tr key={l.id}>
-                  <td>{monthLabel(l.month)}{l.calc.closed && <span className="pill mute">закрыт</span>}</td>
-                  <td>{l.inspector_name ?? (l.no_subcontractor ? "без подрядчика" : "—")}</td>
-                  <td className="wrap">{l.dates_text ?? "—"}</td>
-                  <td className="r">{num(l.quantity, 2).replace(/\.00$/, "")} {l.unit !== "day" && l.unit}</td>
-                  <td className="r">{money(l.client_rate, l.currency)}</td>
-                  <td className="r">{l.no_subcontractor ? "—" : money(l.inspector_rate, l.currency)}</td>
-                  <td className="r" title={l.calc.fx_provisional ? `Предварительный курс из ${l.calc.fx_source_month}` : ""}>
-                    {l.currency === "INR" ? "—" : num(l.calc.fx, 2)}{l.calc.fx_provisional && l.currency !== "INR" && " *"}
-                  </td>
-                  <td className="r">{inr(l.calc.base_inr)}</td><td className="r">{inr(l.calc.gst_inr)}</td><td className="r">{inr(l.calc.tds_inr)}</td>
-                  <td className="r">{inr(l.calc.admin_inr)}</td><td className="r">{inr(l.calc.cost_inr)}</td><td className="r">{inr(l.calc.rko_inr)}</td>
-                  <td className={"r " + ((l.calc.net_inr ?? 0) < 0 ? "neg" : "")}><b>{inr(l.calc.net_inr)}</b></td>
-                  <td className="r">{pct(l.calc.margin)}</td>
-                  <td className="actions">{can("write") && !l.calc.closed && <button className="btn small ghost" onClick={() => setLine(l)}>Изменить</button>}</td>
-                </tr>
-              ))}
-              {j.lines.length === 0 && <tr><td colSpan={16} className="empty">Строк ещё нет. Добавьте первый месяц работы.</td></tr>}
-            </tbody>
-          </table>
-        </div>
+        <DataTable rows={j.lines} cols={lineCols} empty="Строк ещё нет. Добавьте первый месяц работы."
+          actions={(l) => can("write") && !l.calc.closed && <button className="btn small ghost" onClick={() => setLine(l)}>Изменить</button>} />
         <p className="muted small">* курс не зафиксирован — используется курс прошлого месяца. GST и TDS считаются только для клиентов из Индии.</p>
       </section>
 

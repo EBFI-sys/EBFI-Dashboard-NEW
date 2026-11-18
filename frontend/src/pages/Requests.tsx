@@ -12,8 +12,8 @@ const fields: Field[] = [
   { key: "type", label: "Тип", type: "select", options: ["Inspection", "Audit", "Expediting"], required: true },
   { key: "client_id", label: "Клиент", type: "ref", ref: "clients", required: true },
   { key: "final_client", label: "Конечный клиент", list: false },
-  { key: "country", label: "Страна", required: true },
-  { key: "factory", label: "Завод / адрес", wide: true },
+  { key: "country", label: "Страна", type: "suggest", ref: "countries", required: true },
+  { key: "factory", label: "Завод / адрес", type: "suggest", ref: "vendors", wide: true },
   { key: "dates_text", label: "Даты", type: "dates" },
   { key: "client_rate", label: "Нам платят", type: "money", currencyKey: "client_currency" },
   { key: "client_currency", label: "Валюта клиента", type: "select", options: CURRENCIES, list: false },
@@ -44,7 +44,7 @@ export default function Requests() {
           <label className="check"><input type="checkbox" checked={onlyOpen} onChange={(e) => setOnlyOpen(e.target.checked)} /> только открытые</label>
         )}
         rowActions={(r, reload) =>
-          r.job_id ? <Link className="btn small ghost" to={`/jobs/${r.job_id}`}>Работа</Link>
+          r.job_id ? <Link className="btn small ghost" to={`/jobs/${r.job_id}`}>В табеле</Link>
             : !["Отмена", "Выполнено"].includes(r.status) && <button className="btn small" onClick={() => setMk({ r, reload })}>Создать работу</button>
         }
       />

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..calc import Context, compute_line
 from ..dates import format_dates, parse_dates
 from ..db import get_db
+from ..directory import remember_country, remember_vendor
 from ..models import (Client, InspectorInvoice, Inspector, Job, JobLine, MonthClose, Request, SalesInvoice, User,
                       inspector_invoice_jobs)
 from ..security import need
@@ -25,6 +26,8 @@ def _req_save(o: Request, data, db, user, created):
         raise HTTPException(422, f"Статус должен быть одним из: {', '.join(REQ_STATUSES)}")
     if o.status in ("Отмена", "Перенос") and not o.cancel_reason:
         raise HTTPException(422, "Укажите причину отмены или переноса")
+    remember_country(db, o.country)
+    remember_vendor(db, o.factory, o.country)
 
 
 r.include_router(make_crud(Request, "/requests", order_by=[Request.received_date.desc().nulls_last(), Request.id.desc()],
@@ -80,6 +83,15 @@ def job_dict(job: Job, db: Session, ctx: Context, with_lines: bool = False) -> d
             out_lines.append(ld)
     d["totals"] = {k: round(v, 2) for k, v in totals.items()}
     d["months"] = sorted({l.month for l in lines})
+    d["dates"] = sorted({x.isoformat() for l in lines for x in parse_dates(l.dates_text, l.month)})
+    d["line_summary"] = [{"id": l.id, "month": l.month, "dates_text": l.dates_text, "inspector_id": l.inspector_id,
+                          "closed": l.month in ctx.closed} for l in lines]
+    d["totals_by_month"] = {}
+    for l in lines:
+        c = compute_line(l, job, ctx)
+        t = d["totals_by_month"].setdefault(l.month, {"base_inr": 0.0, "net_inr": 0.0})
+        t["base_inr"] += c["base_inr"] or 0
+        t["net_inr"] += c["net_inr"] or 0
     if with_lines:
         d["lines"] = out_lines
         d["sales_invoices"] = [to_dict(s) for s in db.scalars(
@@ -125,6 +137,8 @@ def create_job(data: dict, db: Session = Depends(get_db), user: User = Depends(n
         job.owner_id = user.id
     if not job.client_id or not job.job_number:
         raise HTTPException(422, "Нужны Job number и клиент")
+    remember_country(db, job.country)
+    remember_vendor(db, job.vendor, job.country)
     db.add(job)
     _commit(db)
     return job_dict(job, db, Context(db))
@@ -137,6 +151,8 @@ def update_job(jid: int, data: dict, db: Session = Depends(get_db), _=Depends(ne
         raise HTTPException(404, "Работа не найдена")
     _check_job(data, db)
     apply(job, data)
+    remember_country(db, job.country)
+    remember_vendor(db, job.vendor, job.country)
     _commit(db)
     return job_dict(job, db, Context(db))
 

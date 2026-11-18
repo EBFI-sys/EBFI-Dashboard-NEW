@@ -9,7 +9,7 @@ const fields: Field[] = [
   { key: "client_name", label: "Клиент", form: false },
   { key: "taxable_inr", label: "База, ₹", type: "money", form: false },
   { key: "amount_inr", label: "TDS, ₹", type: "money", form: false },
-  { key: "invoice_status", label: "Оплата инвойса", form: false, render: (r) => <Pill status={r.invoice_status} /> },
+  { key: "invoice_status", label: "Оплата инвойса", form: false, render: (r) => <Pill status={r.invoice_status} />, text: (r) => r.invoice_status },
   { key: "status", label: "Статус TDS", type: "status", options: ["Ожидается", "В Form 26AS", "Зачтён"], required: true },
   { key: "notes", label: "Примечания", type: "textarea" },
 ];

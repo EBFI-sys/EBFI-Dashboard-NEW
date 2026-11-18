@@ -127,3 +127,79 @@ export function DatesField({ value, onChange, month }: { value: string | null; o
     </div>
   );
 }
+
+/** Edit the agreed inspection dates of one job (Табель → «Дата»). Days are saved to the chosen month line. */
+export function JobDatesModal({ job, inspectors, onClose, onSaved }: {
+  job: any; inspectors: Map<number, any>; onClose: () => void; onSaved: () => void;
+}) {
+  const open = (job.line_summary ?? []).filter((l: any) => !l.closed);
+  const [lineId, setLineId] = useState<number | null>(open.at(-1)?.id ?? null);
+  const [dates, setDates] = useState<Record<number, Set<string>>>({});
+  const [view, setView] = useState<string>(open.at(-1)?.month ?? job.dates?.at(-1)?.slice(0, 7) ?? new Date().toISOString().slice(0, 7));
+  const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    // read every line's dates once
+    Promise.all((job.line_summary ?? []).map((l: any) =>
+      api.post("/dates/normalize", { text: l.dates_text ?? "", month: l.month }).then((r) => [l.id, new Set<string>(r.dates)] as const),
+    )).then((all) => setDates(Object.fromEntries(all)));
+  }, [job]);
+
+  const line = (job.line_summary ?? []).find((l: any) => l.id === lineId);
+  const mine = (lineId && dates[lineId]) || new Set<string>();
+  const others = new Set<string>();
+  for (const [id, s] of Object.entries(dates)) if (Number(id) !== lineId) s.forEach((d) => others.add(d));
+
+  const toggle = async (d: string) => {
+    if (!lineId) return;
+    const n = new Set(mine);
+    n.has(d) ? n.delete(d) : n.add(d);
+    setDates({ ...dates, [lineId]: n });
+    setSaving(true);
+    setErr(null);
+    try {
+      const { text } = await api.post("/dates/normalize", { dates: [...n].sort() });
+      await api.patch(`/lines/${lineId}`, { dates_text: text });
+      onSaved();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title={`Даты инспекции · ${job.job_number}`} onClose={onClose} wide>
+      {(job.line_summary ?? []).length === 0 ? (
+        <p>В этой работе ещё нет строк по месяцам. <Link to={`/jobs/${job.id}`} onClick={onClose}>Откройте карточку</Link> и добавьте строку, затем отметьте даты.</p>
+      ) : (
+        <>
+          <div className="cal-nav">
+            <label className="field inline-select">
+              <span>Строка</span>
+              <select value={lineId ?? ""} onChange={(e) => setLineId(Number(e.target.value))}>
+                {(job.line_summary ?? []).map((l: any) => (
+                  <option key={l.id} value={l.id} disabled={l.closed}>
+                    {monthLabel(l.month)} · {inspectors.get(l.inspector_id)?.name ?? "без инспектора"}{l.closed ? " (месяц закрыт)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="spacer" />
+            <button className="btn small ghost" onClick={() => setView(shiftMonth(view, -1))} aria-label="Предыдущий месяц">←</button>
+            <strong>{monthLabel(view)}</strong>
+            <button className="btn small ghost" onClick={() => setView(shiftMonth(view, 1))} aria-label="Следующий месяц">→</button>
+          </div>
+          <MonthGrid month={view} selected={mine} onPick={line && !line.closed ? toggle : undefined}
+            render={(d) => (!mine.has(d) && others.has(d) ? <span className="cal-dot" title="Дата другой строки этой работы" /> : null)} />
+          <p className="muted small">
+            Нажмите на день, чтобы отметить или снять дату — сохраняется сразу{saving ? " (сохраняю…)" : ""}. Точка — даты других строк этой работы.
+            Выбрано: {mine.size} дн.
+          </p>
+          {err && <p className="error">{err}</p>}
+        </>
+      )}
+    </Modal>
+  );
+}

@@ -4,13 +4,14 @@ from sqlalchemy.orm import Session
 
 from ..calc import DEFAULTS, Context, get_setting, snapshot_month
 from ..db import get_db
-from ..models import Client, Country, FxRate, Inspector, MonthClose, PaymentMethod, Setting, User
+from ..models import Client, Country, FxRate, Inspector, MonthClose, PaymentMethod, Setting, User, Vendor
 from ..security import decrypt, encrypt, need
 from .crud import make_crud, to_dict
 
 r = APIRouter()
 
 r.include_router(make_crud(Country, "/countries", order_by=Country.name, search=["name"]))
+r.include_router(make_crud(Vendor, "/vendors", order_by=Vendor.name, search=["name", "country"]))
 r.include_router(make_crud(PaymentMethod, "/payment-methods", order_by=PaymentMethod.name))
 r.include_router(make_crud(Client, "/clients", order_by=Client.name, search=["name", "legal_name", "gstin"]))
 r.include_router(make_crud(FxRate, "/fx-rates", order_by=[FxRate.month.desc(), FxRate.currency],

@@ -18,7 +18,7 @@ const clientFields: Field[] = [
 ];
 const inspectorFields: Field[] = [
   { key: "name", label: "Имя", required: true },
-  { key: "country", label: "Страна" },
+  { key: "country", label: "Страна", type: "suggest", ref: "countries" },
   { key: "specialization", label: "Специализация" },
   { key: "rate", label: "Обычная ставка", type: "money", currencyKey: "currency" },
   { key: "currency", label: "Валюта", type: "select", options: CURRENCIES, list: false },
@@ -37,6 +37,11 @@ const pmFields: Field[] = [
   { key: "rko_percent", label: "РКО, % от суммы подряда", type: "number" },
   { key: "rko_fixed_inr", label: "РКО фиксированно, ₹", type: "money" },
 ];
+const vendorFields: Field[] = [
+  { key: "name", label: "Завод / предприятие", required: true, wide: true },
+  { key: "country", label: "Страна", type: "suggest", ref: "countries" },
+  { key: "notes", label: "Примечания", type: "textarea" },
+];
 const fxFields: Field[] = [
   { key: "month", label: "Месяц (ГГГГ-ММ)", required: true },
   { key: "currency", label: "Валюта", type: "select", options: ["USD", "EUR", "GBP"], required: true },
@@ -44,7 +49,7 @@ const fxFields: Field[] = [
 ];
 
 const TABS = [
-  ["clients", "Клиенты"], ["inspectors", "Инспекторы"], ["fx", "Курсы"], ["settings", "Ставки налогов"],
+  ["clients", "Клиенты"], ["inspectors", "Инспекторы"], ["vendors", "Заводы (Vendor)"], ["fx", "Курсы"], ["settings", "Ставки налогов"],
   ["pm", "Способы оплаты"], ["countries", "Страны"],
 ] as const;
 
@@ -54,12 +59,13 @@ export default function References() {
     <div className="page">
       <header className="page-head"><h1>Справочники</h1></header>
       <nav className="tabs">{TABS.map(([id, l]) => <button key={id} aria-selected={tab === id} onClick={() => setTab(id)}>{l}</button>)}</nav>
-      {tab === "clients" && <CrudTable endpoint="/clients" title="Клиенты" fields={clientFields} refName="clients" defaults={{ default_currency: "USD" }} csvName="clients.csv" />}
-      {tab === "inspectors" && <CrudTable endpoint="/inspectors" title="Инспекторы" fields={inspectorFields} refName="inspectors" defaults={{ currency: "USD" }} csvName="inspectors.csv" />}
-      {tab === "fx" && <CrudTable endpoint="/fx-rates" title="Курсы к INR" fields={fxFields} writeRight="settings" defaults={{ currency: "USD" }} />}
+      {tab === "clients" && <CrudTable columnFilters={false} endpoint="/clients" title="Клиенты" fields={clientFields} refName="clients" defaults={{ default_currency: "USD" }} csvName="clients.csv" />}
+      {tab === "inspectors" && <CrudTable columnFilters={false} endpoint="/inspectors" title="Инспекторы" fields={inspectorFields} refName="inspectors" defaults={{ currency: "USD" }} csvName="inspectors.csv" />}
+      {tab === "vendors" && <CrudTable columnFilters={false} endpoint="/vendors" title="Заводы (Vendor)" fields={vendorFields} refName="vendors" csvName="vendors.csv" />}
+      {tab === "fx" && <CrudTable columnFilters={false} endpoint="/fx-rates" title="Курсы к INR" fields={fxFields} writeRight="settings" defaults={{ currency: "USD" }} />}
       {tab === "settings" && <TaxSettings />}
-      {tab === "pm" && <CrudTable endpoint="/payment-methods" title="Способы оплаты и РКО" fields={pmFields} refName="payment-methods" />}
-      {tab === "countries" && <CrudTable endpoint="/countries" title="Страны и регионы" fields={countryFields} defaults={{ region: "Europe" }} />}
+      {tab === "pm" && <CrudTable columnFilters={false} endpoint="/payment-methods" title="Способы оплаты и РКО" fields={pmFields} refName="payment-methods" />}
+      {tab === "countries" && <CrudTable columnFilters={false} endpoint="/countries" title="Страны и регионы" fields={countryFields} defaults={{ region: "Europe" }} />}
     </div>
   );
 }

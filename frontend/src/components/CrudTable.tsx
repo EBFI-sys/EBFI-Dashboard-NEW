@@ -1,14 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, dateLabel, downloadCsv, money, monthLabel, num } from "../api";
 import { useAuth } from "../auth";
-import { invalidateRef, useRef_ } from "../refs";
+import { invalidateRef, loadRef, useRef_ } from "../refs";
 import { DatesField } from "./Calendar";
+import DataTable, { Col } from "./DataTable";
 import { ErrorLine, Modal, Pill, Toast, useAsync } from "./ui";
 
 export type Field = {
   key: string;
   label: string;
-  type?: "text" | "number" | "money" | "date" | "select" | "bool" | "textarea" | "ref" | "multiref" | "status" | "dates";
+  type?: "text" | "number" | "money" | "date" | "select" | "bool" | "textarea" | "ref" | "multiref" | "status" | "dates" | "suggest";
   monthKey?: string; // dates field: which field holds the line month
   options?: string[];
   ref?: string; // reference list endpoint, e.g. "clients"
@@ -18,6 +19,7 @@ export type Field = {
   required?: boolean;
   currencyKey?: string; // money column: which field holds the currency
   render?: (row: any) => React.ReactNode;
+  text?: (row: any) => string | number | null | undefined; // value for column filters when `render` is used
   wide?: boolean;
   hint?: string;
 };
@@ -37,6 +39,7 @@ type Props = {
   onRowClick?: (row: any) => void;
   allowCreate?: boolean;
   periodKey?: string; // date field to filter by period (month or custom range)
+  columnFilters?: boolean; // Excel-style filters in column headers (default true)
 };
 
 /** Indian financial year quarter: 2026-11-15 -> "Q3 FY27". */
@@ -86,6 +89,8 @@ function MultiRef({ f, value, onChange }: { f: Field; value: number[]; onChange:
 
 export function FieldInput({ f, value, onChange, row }: { f: Field; value: any; onChange: (v: any) => void; row?: any }) {
   switch (f.type) {
+    case "suggest":
+      return <SuggestInput f={f} value={value} onChange={onChange} />;
     case "dates":
       return <DatesField value={value} onChange={onChange} month={f.monthKey ? row?.[f.monthKey] : undefined} />;
     case "number":
@@ -112,6 +117,36 @@ export function FieldInput({ f, value, onChange, row }: { f: Field; value: any; 
     default:
       return <input value={value ?? ""} onChange={(e) => onChange(e.target.value)} />;
   }
+}
+
+/** Free text with suggestions from a reference list (vendors, countries): type a few letters, pick a match. */
+function SuggestInput({ f, value, onChange }: { f: Field; value: any; onChange: (v: any) => void }) {
+  const rows = useRef_(f.ref!);
+  const id = "dl-" + f.ref + "-" + f.key;
+  return (
+    <>
+      <input list={id} value={value ?? ""} autoComplete="off" onChange={(e) => onChange(e.target.value)} placeholder="Начните вводить…" />
+      <datalist id={id}>
+        {rows.map((r) => <option key={r.id} value={r[f.refLabel ?? "name"]}>{r.country ?? r.region ?? ""}</option>)}
+      </datalist>
+    </>
+  );
+}
+
+/** id -> label maps for every reference list used by the columns (for filters and sorting). */
+function useRefMaps(names: string[]) {
+  const [maps, setMaps] = useState<Record<string, Map<any, any>>>({});
+  const key = names.join(",");
+  useEffect(() => {
+    let live = true;
+    Promise.all(names.map((n) => loadRef(n).then((rows) => [n, rows] as const).catch(() => [n, []] as const))).then((all) => {
+      if (!live) return;
+      setMaps(Object.fromEntries(all.map(([n, rows]) => [n, new Map(rows.map((r: any) => [r.id, r])) ])));
+    });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return maps;
 }
 
 function RefLabel({ f, id }: { f: Field; id: any }) {
@@ -191,7 +226,6 @@ export default function CrudTable(p: Props) {
   const [q, setQ] = useState("");
   const [period, setPeriod] = useState<string>("all");
   const [range, setRange] = useState<{ from: string; to: string }>({ from: "", to: "" });
-  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const canWrite = can(p.writeRight ?? "write");
   const cols = p.fields.filter((f) => f.list !== false);
@@ -212,9 +246,28 @@ export default function CrudTable(p: Props) {
       const s = q.toLowerCase();
       r = r.filter((x) => Object.values(x).some((v) => v != null && String(v).toLowerCase().includes(s)));
     }
-    if (sort) r = [...r].sort((a, b) => (a[sort.key] ?? "") > (b[sort.key] ?? "") ? sort.dir : -sort.dir);
     return r;
-  }, [data, q, sort, p.filter, p.periodKey, period, range]);
+  }, [data, q, p.filter, p.periodKey, period, range]);
+  const [visible, setVisible] = useState<any[]>([]);
+  const refMaps = useRefMaps([...new Set(cols.filter((c) => c.type === "ref" && c.ref).map((c) => c.ref!))]);
+  const tableCols: Col[] = useMemo(() => cols.map((c) => ({
+    key: c.key,
+    label: c.label,
+    render: (r: any) => cell(c, r),
+    align: c.type === "money" || c.type === "number" ? "r" : undefined,
+    cls: c.type === "textarea" ? "wrap" : undefined,
+    text: (r: any) => {
+      if (c.text) return c.text(r);
+      const v = r[c.key];
+      if (c.type === "ref") {
+        const ref = refMaps[c.ref!]?.get(v);
+        return ref ? ref[c.refLabel ?? "name"] : v;
+      }
+      if (c.type === "bool") return v ? "да" : "нет";
+      if (c.type === "date") return v ? String(v).slice(0, 10) : null;
+      return v;
+    },
+  })), [cols, refMaps]);
 
   const periods = useMemo(() => {
     if (!p.periodKey) return { months: [] as string[], quarters: [] as string[] };
@@ -246,7 +299,7 @@ export default function CrudTable(p: Props) {
     <section className="card">
       <div className="toolbar">
         <h2>{p.title}</h2>
-        <span className="muted">{loading ? "Загрузка…" : `${rows.length} записей`}</span>
+        <span className="muted">{loading ? "Загрузка…" : `${visible.length} записей`}</span>
         <div className="spacer" />
         {p.periodKey && (
           <>
@@ -266,42 +319,17 @@ export default function CrudTable(p: Props) {
           </>
         )}
         <input className="search" placeholder="Поиск" value={q} onChange={(e) => setQ(e.target.value)} />
-        {p.toolbar?.(rows, reload)}
-        <button className="btn ghost" onClick={() => downloadCsv(p.csvName ?? "export.csv", rows, cols.map((c) => ({ key: c.key, label: c.label })))}>CSV</button>
+        {p.toolbar?.(visible, reload)}
+        <button className="btn ghost" onClick={() => downloadCsv(p.csvName ?? "export.csv", visible, cols.map((c) => ({ key: c.key, label: c.label })))}>CSV</button>
         {canWrite && p.allowCreate !== false && <button className="btn primary" onClick={() => setEdit({ ...(p.defaults ?? {}) })}>Добавить</button>}
       </div>
       <ErrorLine error={error} />
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              {cols.map((c) => (
-                <th key={c.key} className={c.type === "money" || c.type === "number" ? "r" : ""}
-                    onClick={() => setSort({ key: c.key, dir: sort?.key === c.key ? (-sort.dir as 1 | -1) : 1 })}>
-                  {c.label}{sort?.key === c.key ? (sort.dir === 1 ? " ↑" : " ↓") : ""}
-                </th>
-              ))}
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className={p.onRowClick ? "clickable" : ""} onClick={() => p.onRowClick?.(r)}>
-                {cols.map((c) => (
-                  <td key={c.key} className={c.type === "money" || c.type === "number" ? "r" : c.type === "textarea" ? "wrap" : ""}>{cell(c, r)}</td>
-                ))}
-                <td className="actions" onClick={(e) => e.stopPropagation()}>
-                  {p.rowActions?.(r, reload)}
-                  {canWrite && <button className="btn small ghost" onClick={() => setEdit(r)}>Изменить</button>}
-                </td>
-              </tr>
-            ))}
-            {!loading && rows.length === 0 && (
-              <tr><td colSpan={cols.length + 1} className="empty">{p.allowCreate === false ? "Пока пусто." : "Пока пусто. Нажмите «Добавить», чтобы создать первую запись."}</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable rows={rows} cols={tableCols} filters={p.columnFilters !== false} onRowClick={p.onRowClick} onVisible={setVisible}
+        empty={loading ? "Загрузка…" : p.allowCreate === false ? "Пока пусто." : "Пока пусто. Нажмите «Добавить», чтобы создать первую запись."}
+        actions={(r) => (<>
+          {p.rowActions?.(r, reload)}
+          {canWrite && <button className="btn small ghost" onClick={() => setEdit(r)}>Изменить</button>}
+        </>)} />
       {edit && (
         <>
           <EditForm title={edit.id ? "Изменить" : "Новая запись"} fields={p.fields} initial={edit} onSave={save} onCancel={() => setEdit(null)} />

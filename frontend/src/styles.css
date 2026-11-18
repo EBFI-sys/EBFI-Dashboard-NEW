@@ -180,3 +180,26 @@ tfoot td { font-weight: 600; border-top: 2px solid var(--line); }
 .dates-pop { margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
 .dates-pop .cal-day { min-height: 36px; }
 .range { display: inline-flex; gap: 6px; align-items: center; }
+.cal-dot { align-self: flex-end; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+.inline-select { flex-direction: row; align-items: center; gap: 8px; }
+.date-cell { border: 1px dashed var(--line); background: transparent; color: var(--ink); font: inherit; padding: 3px 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.date-cell:hover { border-color: var(--accent); color: var(--accent); }
+.date-cell.empty-dates { color: var(--muted); }
+/* column filters */
+th.th { position: relative; }
+.th-in { display: inline-flex; align-items: center; gap: 2px; }
+.th-label { border: 0; background: none; font: inherit; color: inherit; padding: 0; cursor: pointer; }
+.th-filter { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 11px; padding: 1px 4px; border-radius: 4px; }
+.th-filter:hover { background: var(--line); }
+.th-filter.on { background: var(--accent); color: var(--accent-ink); }
+.fmenu { position: fixed; z-index: 50; width: 260px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.18); padding: 8px; display: flex; flex-direction: column; gap: 6px; text-align: left; font-weight: 400; color: var(--ink); white-space: normal; }
+.fmenu-sort { display: flex; flex-direction: column; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.fmenu-sort button { border: 0; background: none; text-align: left; font: inherit; padding: 4px 6px; border-radius: 4px; cursor: pointer; color: var(--ink); }
+.fmenu-sort button:hover { background: var(--line); }
+.fmenu-list { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; }
+.fmenu-item { display: flex; gap: 8px; align-items: center; padding: 3px 4px; font-size: 13px; cursor: pointer; }
+.fmenu-item .fmenu-val { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fmenu-item.all { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.fmenu-foot { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.filter-note { display: flex; gap: 10px; align-items: center; font-size: 12.5px; color: var(--muted); padding: 0 0 8px; }

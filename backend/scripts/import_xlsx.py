@@ -21,8 +21,10 @@ import openpyxl
 from sqlalchemy import delete, select
 
 from app.db import Base, SessionLocal, engine
-from app.models import (AuditLog, Client, FxRate, Inspector, InspectorInvoice, Job, JobLine, MonthClose, PaymentMethod,
-                        Request, SalesInvoice, TdsEntry, User, inspector_invoice_jobs)
+from app.directory import clean_country, clean_vendor, same_vendor, vendor_key
+from app.models import (AuditLog, Client, Country, FxRate, Inspector, InspectorInvoice, Job, JobLine, MonthClose,
+                        PaymentMethod, Request, SalesInvoice, TdsEntry, User, Vendor, inspector_invoice_jobs)
+from app.routers.dashboard import region_of
 from app.routers.money import _sales_after
 from scripts.names import canonical_groups, same_person, tokens
 
@@ -126,15 +128,27 @@ class Importer:
         self.users = {u.initials: u for u in db.scalars(select(User))}
         self.methods = {m.name: m for m in db.scalars(select(PaymentMethod))}
         self.jobs: dict[str, Job] = {}
+        self.vendor_name: dict[str, str] = {}  # vendor_key -> canonical name
         self.stats = Counter()
 
     # ------------------------------------------------------------ reference lists from the whole history
     def build_references(self, pnl: str | None, requests: str | None, sales: str | None, invoices: str | None):
         names, countries, rates, methods = Counter(), defaultdict(Counter), {}, defaultdict(Counter)
         client_names = Counter()
+        vendors: dict[str, Counter] = defaultdict(Counter)
+        vendor_country: dict[str, Counter] = defaultdict(Counter)
+        country_names = Counter()
         if pnl:
             for m, g in pnl_rows(pnl):
                 client_names[client_name(g("client"))] += 1
+                cn = clean_country(g("country"))
+                if cn:
+                    country_names[cn] += 1
+                v = clean_vendor(norm(g("vendor")))
+                if v:
+                    vendors[vendor_key(v)][v] += 1
+                    if cn:
+                        vendor_country[vendor_key(v)][cn] += 1
                 people = split_people(norm(g("inspector")))
                 for p in people:
                     names[p] += 1
@@ -157,6 +171,9 @@ class Importer:
             for row in self._request_rows(requests):
                 if row["client"]:
                     client_names[client_name(row["client"])] += 1
+                cn = clean_country(row["country"])
+                if cn:
+                    country_names[cn] += 1
         if sales:
             for d in self._sales_rows(sales):
                 client_names[client_name(d.get("Folder / Business Unit"))] += 1
@@ -202,6 +219,46 @@ class Importer:
         self._client_key = seen
         self.db.flush()
         self.stats["clients"] = len(self.clients)
+
+        # vendors from every month of the P&L: spelling variants merged (scripts → app/directory.py), alphabetical
+        spell = Counter()
+        country_of = defaultdict(Counter)
+        for key, sp in vendors.items():
+            spell.update(sp)
+            for name in sp:
+                country_of[name].update(vendor_country[key])
+        groups: list[list[str]] = []
+        for name, _ in spell.most_common():
+            for g in groups:
+                if all(same_vendor(name, x) for x in g):
+                    g.append(name)
+                    break
+            else:
+                groups.append([name])
+        for g in sorted(groups, key=lambda g: g[0].lower()):
+            canon = max(g, key=lambda x: (spell[x], x != x.upper(), len(x)))[:300]
+            vc = Counter()
+            for x in g:
+                vc.update(country_of[x])
+                self.vendor_name[x] = canon
+            others = sorted(x for x in g if x != canon)
+            self.db.add(Vendor(name=canon, country=vc.most_common(1)[0][0] if vc else None,
+                               notes=("Варианты написания: " + "; ".join(others))[:2000] if others else None))
+        self.stats["vendors"] = len(groups)
+        self.stats["vendor_spellings_merged"] = len(spell) - len(groups)
+        for cn in sorted(country_names):
+            self.db.add(Country(name=cn, region=region_of(cn, {})))
+        self.stats["countries"] = len(country_names)
+        self.db.flush()
+
+    @staticmethod
+    def country(raw) -> str:
+        """Clean single-country name; a list like "Germany/Italy" is kept as typed (it is not added to the list)."""
+        return clean_country(raw) or norm(raw).strip(" .")
+
+    def vendor(self, raw) -> str | None:
+        v = clean_vendor(norm(raw))
+        return self.vendor_name.get(v, v)[:300] if v else None
 
     def client(self, name) -> Client | None:
         n = client_name(name)
@@ -250,8 +307,8 @@ class Importer:
             job = self.jobs.get(jn)
             owner = self.users.get(OWNER.get(norm(g("owner")), ""))
             if not job:
-                country = COUNTRY_FIX.get(norm(g("country")), norm(g("country")))
-                job = Job(job_number=jn, client_id=client.id, country=country or None, vendor=norm(g("vendor"))[:300] or None,
+                country = self.country(g("country"))
+                job = Job(job_number=jn, client_id=client.id, country=country or None, vendor=self.vendor(g("vendor")),
                           client_contact=norm(g("contact"))[:120] or None, client_job_number=norm(g("client_job"))[:120] or None,
                           owner_id=owner.id if owner else None, status="Сдан")
                 self.db.add(job)
@@ -318,10 +375,10 @@ class Importer:
             t = norm(q["type"])
             t = t.split()[0].capitalize() if t and not t[0].isdigit() else "Inspection"
             insp, note = self.inspector(q["inspector"]) if q["inspector"] else (None, None)
-            country = norm(q["country"])
+            country = self.country(q["country"])
             notes = "\n".join(x for x in [norm(q["notes"])[:2000], note or ""] if x) or None
             self.db.add(Request(received_date=q["date"], type=t, client_id=client.id if client else None,
-                                country=COUNTRY_FIX.get(country, country.title() if country.islower() else country) or None,
+                                country=country or None,
                                 factory=norm(q["factory"])[:300] or None, dates_text=norm(q["dates"])[:200] or None,
                                 client_rate=cr, client_currency=cc, inspector_rate=ir, inspector_currency=ic,
                                 inspector_id=insp.id if insp else None, status=q["status"],
@@ -402,7 +459,8 @@ class Importer:
 def reset(db):
     db.execute(delete(inspector_invoice_jobs))
     db.execute(JobLine.__table__.update().values(sales_invoice_id=None))
-    for model in (TdsEntry, InspectorInvoice, JobLine, Request, SalesInvoice, Job, FxRate, MonthClose, Inspector, Client, AuditLog):
+    for model in (TdsEntry, InspectorInvoice, JobLine, Request, SalesInvoice, Job, FxRate, MonthClose, Inspector, Client,
+                  Vendor, Country, AuditLog):
         db.execute(delete(model))
     db.commit()
 

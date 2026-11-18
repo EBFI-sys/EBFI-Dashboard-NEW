@@ -50,6 +50,15 @@ class Country(Base):
     region: Mapped[str] = mapped_column(String(40), default="Other")
 
 
+class Vendor(Base):
+    """Factories / vendors where inspections take place; offered as suggestions when typing."""
+    __tablename__ = "vendors"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(300), unique=True)
+    country: Mapped[str | None] = mapped_column(String(80))
+    notes: Mapped[str | None] = mapped_column(Text)
+
+
 class PaymentMethod(Base):
     __tablename__ = "payment_methods"
     id: Mapped[int] = mapped_column(primary_key=True)

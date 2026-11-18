@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth";
+import { CurrencyProvider } from "./currency";
 import "./styles.css";
 import Audit from "./pages/Audit";
 import Dashboard from "./pages/Dashboard";
@@ -20,7 +21,7 @@ import Users from "./pages/Users";
 const NAV = [
   { to: "/", label: "Дашборд", end: true },
   { to: "/requests", label: "Заявки" },
-  { to: "/jobs", label: "Работы" },
+  { to: "/jobs", label: "Табель" },
   { to: "/pnl", label: "P&L по месяцам" },
   { to: "/sales", label: "Инвойсы клиентам" },
   { to: "/payouts", label: "Счета инспекторов" },
@@ -85,9 +86,11 @@ function Shell() {
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <AuthProvider>
-      <BrowserRouter>
-        <Shell />
-      </BrowserRouter>
+      <CurrencyProvider>
+        <BrowserRouter>
+          <Shell />
+        </BrowserRouter>
+      </CurrencyProvider>
     </AuthProvider>
   </React.StrictMode>,
 );

@@ -9,11 +9,11 @@ const fields: Field[] = [
   { key: "number", label: "Номер счёта" },
   { key: "invoice_date", label: "Дата счёта", type: "date" },
   { key: "job_ids", label: "Работы (EBFI №)", type: "multiref", ref: "jobs", refLabel: "job_number", list: false },
-  { key: "job_numbers", label: "EBFI №", form: false, render: (r) => r.job_numbers?.join(", ") || "—" },
+  { key: "job_numbers", label: "EBFI №", form: false, render: (r) => r.job_numbers?.join(", ") || "—", text: (r) => r.job_numbers?.join(", ") },
   { key: "dates_text", label: "Даты", list: false },
   { key: "days", label: "Дней", type: "number" },
   { key: "rate", label: "Ставка", type: "money", currencyKey: "currency", list: false },
-  { key: "amount", label: "Сумма", type: "money", currencyKey: "currency", required: true,
+  { key: "amount", label: "Сумма", type: "money", currencyKey: "currency", required: true, text: (r) => r.amount,
     render: (r) => (
       <span title={r.expected_amount != null && Math.abs(r.expected_amount - r.amount) > 1 ? `По строкам работ: ${money(r.expected_amount, r.currency)}` : ""}>
         {money(r.amount, r.currency)}{r.expected_amount != null && Math.abs(r.expected_amount - r.amount) > 1 && <span className="pill warn" style={{ marginLeft: 6 }}>≠ строкам</span>}
@@ -21,7 +21,7 @@ const fields: Field[] = [
     ) },
   { key: "currency", label: "Валюта", type: "select", options: CURRENCIES, required: true },
   { key: "payment_method_id", label: "Способ оплаты", type: "ref", ref: "payment-methods" },
-  { key: "paid", label: "Оплачено", type: "bool", render: (r) => <Pill status={r.paid ? "Оплачено" : "К оплате"} /> },
+  { key: "paid", label: "Оплачено", type: "bool", render: (r) => <Pill status={r.paid ? "Оплачено" : "К оплате"} />, text: (r) => (r.paid ? "Оплачено" : "К оплате") },
   { key: "paid_date", label: "Дата оплаты", type: "date" },
   { key: "comment", label: "Комментарий", type: "textarea", list: false },
 ];

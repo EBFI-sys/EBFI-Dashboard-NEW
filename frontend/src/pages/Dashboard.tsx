@@ -4,6 +4,8 @@ import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ResponsiveCo
 import { api, money, monthLabel, num, pct } from "../api";
 import { ErrorLine, Pill, useAsync } from "../components/ui";
 import { REGIONS, useRef_ } from "../refs";
+import DataTable from "../components/DataTable";
+import { CurrencySwitch, useCurrency } from "../currency";
 
 const TABS = [
   { id: "overview", label: "Обзор и финансы" },
@@ -27,7 +29,9 @@ const C1 = "#3d6fb6", C2 = "#c47a2c", GRID = "var(--line)";
 export default function Dashboard() {
   const clients = useRef_("clients");
   const users = useRef_("users");
-  const [f, setF] = useState({ period: "all", client_id: "", region: "", owner_id: "", currency: "INR" });
+  const { cur: viewCur } = useCurrency();
+  const [f0, setF] = useState({ period: "all", client_id: "", region: "", owner_id: "" });
+  const f = { ...f0, currency: viewCur };
   const [tab, setTab] = useState(() => (location.hash.slice(1) || "overview"));
   const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v !== "") as [string, string][]).toString();
   const { data: d, error, loading } = useAsync(() => api.get(`/dashboard?${qs}`), [qs]);
@@ -55,7 +59,7 @@ export default function Dashboard() {
 
       <div className="filters card">
         <label>Период
-          <select value={f.period} onChange={(e) => setF({ ...f, period: e.target.value })}>
+          <select value={f.period} onChange={(e) => setF({ ...f0, period: e.target.value })}>
             <option value="all">Все месяцы</option>
             <option value="fy">Текущий финансовый год (с апреля)</option>
             <option value="last3">Последние 3 месяца</option>
@@ -63,30 +67,29 @@ export default function Dashboard() {
           </select>
         </label>
         <label>Клиент
-          <select value={f.client_id} onChange={(e) => setF({ ...f, client_id: e.target.value })}>
+          <select value={f.client_id} onChange={(e) => setF({ ...f0, client_id: e.target.value })}>
             <option value="">Все клиенты</option>
             {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </label>
         <label>Страна / регион
-          <select value={f.region} onChange={(e) => setF({ ...f, region: e.target.value })}>
+          <select value={f.region} onChange={(e) => setF({ ...f0, region: e.target.value })}>
             <option value="">Все регионы</option>
             {REGIONS.map((r) => <option key={r}>{r}</option>)}
           </select>
         </label>
         <label>Координатор
-          <select value={f.owner_id} onChange={(e) => setF({ ...f, owner_id: e.target.value })}>
+          <select value={f.owner_id} onChange={(e) => setF({ ...f0, owner_id: e.target.value })}>
             <option value="">Все</option>
             {users.map((u) => <option key={u.id} value={u.id}>{u.initials} · {u.name}</option>)}
           </select>
         </label>
-        <div className="seg" role="group" aria-label="Валюта">
-          {["INR", "USD", "EUR"].map((c) => (
-            <button key={c} className={cur === c ? "on" : ""} onClick={() => setF({ ...f, currency: c })}>{c}</button>
-          ))}
-        </div>
+        <CurrencySwitch />
       </div>
 
+      {d?.missing_rate_months?.length > 0 && (
+        <div className="banner soft">Нет курса {cur} к INR за: {d.missing_rate_months.map(monthLabel).join(", ")} — эти месяцы не попали в суммы. Внесите курс в «Справочники → Курсы».</div>
+      )}
       {d?.provisional_months?.length > 0 && (
         <div className="banner soft">Курс не зафиксирован за: {d.provisional_months.map(monthLabel).join(", ")} — цифры предварительные (по курсу прошлого месяца).</div>
       )}
@@ -260,16 +263,8 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: 
 type Col = { k: string; l: string; r?: boolean; f?: (v: any, row: any) => React.ReactNode };
 export function Table({ rows, cols, empty = "Нет данных для этих фильтров." }: { rows: any[]; cols: Col[]; empty?: string }) {
   return (
-    <div className="table-wrap">
-      <table>
-        <thead><tr>{cols.map((c) => <th key={c.k} className={c.r ? "r" : ""}>{c.l}</th>)}</tr></thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i}>{cols.map((c) => <td key={c.k} className={c.r ? "r" : ""}>{c.f ? c.f(row[c.k], row) : row[c.k] ?? "—"}</td>)}</tr>
-          ))}
-          {rows.length === 0 && <tr><td colSpan={cols.length} className="empty">{empty}</td></tr>}
-        </tbody>
-      </table>
-    </div>
+    <DataTable rows={rows} empty={empty}
+      cols={cols.map((c) => ({ key: c.k, label: c.l, align: c.r ? "r" : undefined, text: (row: any) => row[c.k],
+        render: (row: any) => (c.f ? c.f(row[c.k], row) : row[c.k] ?? "—") }))} />
   );
 }

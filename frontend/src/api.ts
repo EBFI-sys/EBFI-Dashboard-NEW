@@ -90,3 +90,23 @@ export function downloadCsv(name: string, rows: Record<string, unknown>[], cols:
   a.click();
   URL.revokeObjectURL(url);
 }
+
+/** ["2026-10-05","2026-10-06","2026-10-07","2026-11-13"] -> "05–07.10, 13.11" */
+export function compactDates(dates: string[], max = 4): string {
+  const sorted = [...new Set(dates)].sort();
+  const parts: string[] = [];
+  let i = 0;
+  while (i < sorted.length) {
+    let j = i;
+    const next = (d: string) => {
+      const x = new Date(d + "T00:00:00Z");
+      x.setUTCDate(x.getUTCDate() + 1);
+      return x.toISOString().slice(0, 10);
+    };
+    while (j + 1 < sorted.length && sorted[j + 1] === next(sorted[j]) && sorted[j + 1].slice(0, 7) === sorted[i].slice(0, 7)) j++;
+    const a = sorted[i], b = sorted[j];
+    parts.push(a === b ? `${a.slice(8)}.${a.slice(5, 7)}` : `${a.slice(8)}–${b.slice(8)}.${a.slice(5, 7)}`);
+    i = j + 1;
+  }
+  return parts.length > max ? parts.slice(0, max).join(", ") + ` +${parts.length - max}` : parts.join(", ");
+}

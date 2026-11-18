@@ -1,21 +1,31 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api, downloadCsv, inr, monthLabel, num, pct, thisMonth } from "../api";
+import { api, downloadCsv, monthLabel, num, pct, thisMonth } from "../api";
 import { useAuth } from "../auth";
+import DataTable, { Col } from "../components/DataTable";
 import { ErrorLine, Pill, Toast, useAsync } from "../components/ui";
+import { CurrencySwitch, useCurrency } from "../currency";
+
+const MONEY = ["base_inr", "gst_inr", "tds_inr", "cash_in_inr", "admin_inr", "cost_inr", "rko_inr", "net_inr"] as const;
+const LABEL: Record<string, string> = {
+  base_inr: "Выручка", gst_inr: "GST", tds_inr: "TDS", cash_in_inr: "Приход", admin_inr: "Админка", cost_inr: "Подряд", rko_inr: "РКО", net_inr: "Прибыль",
+};
 
 export default function Pnl() {
   const { can } = useAuth();
+  const { cur, conv, fmt, missing } = useCurrency();
   const [month, setMonth] = useState(thisMonth());
   const { data, error, loading, reload } = useAsync(() => api.get<any[]>(`/lines?month=${month}`), [month]);
   const months = useAsync(() => api.get<any[]>("/months"), []);
   const [toast, setToast] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [sure, setSure] = useState(false);
+  const [visible, setVisible] = useState<any[]>([]);
   const rows = data ?? [];
   const closed = (months.data ?? []).find((m) => m.month === month);
-  const sum = (k: string) => rows.reduce((a, r) => a + (r.calc[k] ?? 0), 0);
+  const sum = (rs: any[], k: string) => rs.reduce((a, r) => a + (r.calc[k] ?? 0), 0);
   const provisional = rows.some((r) => r.calc.fx_provisional && r.currency !== "INR");
+  const f = (inr: number | null | undefined) => fmt(inr, month);
 
   const close = async () => {
     setErr(null);
@@ -30,17 +40,33 @@ export default function Pnl() {
     }
   };
 
-  const csv = () => downloadCsv(`pnl-${month}.csv`, rows.map((r) => ({
+  const cols: Col[] = [
+    { key: "job_number", label: "Job №", cls: "mono", render: (r) => <Link to={`/jobs/${r.job_id}`}>{r.job_number}</Link> },
+    { key: "client_name", label: "Клиент" },
+    { key: "country", label: "Страна" },
+    { key: "inspector_name", label: "Инспектор" },
+    { key: "owner", label: "Чья" },
+    { key: "job_status", label: "Статус", render: (r) => <Pill status={r.job_status} /> },
+    { key: "quantity", label: "Кол-во", align: "r", render: (r) => num(r.quantity, 2).replace(/\.00$/, "") },
+    { key: "client_rate", label: "Ставка", align: "r", text: (r) => `${r.client_rate} ${r.currency}`, sortNumeric: false,
+      render: (r) => `${num(r.client_rate, 2).replace(/\.00$/, "")} ${r.currency}` },
+    { key: "fx", label: "Курс", align: "r", text: (r) => r.calc.fx, render: (r) => (r.currency === "INR" ? "—" : num(r.calc.fx, 2)) },
+    ...MONEY.map((k): Col => ({
+      key: k, label: LABEL[k], align: "r", text: (r) => r.calc[k],
+      render: (r) => k === "net_inr" ? <b className={(r.calc[k] ?? 0) < 0 ? "neg" : ""}>{f(r.calc[k])}</b> : f(r.calc[k]),
+    })),
+    { key: "margin", label: "Маржа", align: "r", text: (r) => r.calc.margin, render: (r) => pct(r.calc.margin) },
+  ];
+
+  const csv = () => downloadCsv(`pnl-${month}-${cur}.csv`, visible.map((r) => ({
     job: r.job_number, client: r.client_name, country: r.country, inspector: r.inspector_name, owner: r.owner, status: r.job_status,
-    dates: r.dates_text, qty: r.quantity, unit: r.unit, currency: r.currency, rate: r.client_rate, cost_rate: r.inspector_rate,
-    fx: r.calc.fx, base: r.calc.base_inr, gst: r.calc.gst_inr, tds: r.calc.tds_inr, cash: r.calc.cash_in_inr, admin: r.calc.admin_inr,
-    cost: r.calc.cost_inr, rko: r.calc.rko_inr, net: r.calc.net_inr,
+    dates: r.dates_text, qty: r.quantity, unit: r.unit, currency: r.currency, rate: r.client_rate, cost_rate: r.inspector_rate, fx: r.calc.fx,
+    ...Object.fromEntries(MONEY.map((k) => [k, conv(r.calc[k], month)?.toFixed(2)])),
   })), [
     { key: "job", label: "Job number" }, { key: "client", label: "Client" }, { key: "country", label: "Country" }, { key: "inspector", label: "Inspector" },
     { key: "owner", label: "Чья" }, { key: "status", label: "Статус" }, { key: "dates", label: "Даты" }, { key: "qty", label: "Total" }, { key: "unit", label: "Ед." },
     { key: "currency", label: "Валюта" }, { key: "rate", label: "Manday Rate" }, { key: "cost_rate", label: "Мы платим" }, { key: "fx", label: "Курс" },
-    { key: "base", label: "Выручка B, INR" }, { key: "gst", label: "GST" }, { key: "tds", label: "TDS" }, { key: "cash", label: "Приход на р/с" },
-    { key: "admin", label: "Админка" }, { key: "cost", label: "Подряд" }, { key: "rko", label: "РКО" }, { key: "net", label: "Чистая прибыль" },
+    ...MONEY.map((k) => ({ key: k, label: `${LABEL[k]}, ${cur}` })),
   ]);
 
   return (
@@ -48,10 +74,11 @@ export default function Pnl() {
       <header className="page-head">
         <div>
           <h1>P&amp;L за {monthLabel(month)}</h1>
-          <p className="lede">Выручка <b>{inr(sum("base_inr"))}</b>, чистая прибыль <b>{inr(sum("net_inr"))}</b>, приход на счёт <b>{inr(sum("cash_in_inr"))}</b>.</p>
+          <p className="lede">Выручка <b>{f(sum(visible, "base_inr"))}</b>, чистая прибыль <b>{f(sum(visible, "net_inr"))}</b>, приход на счёт <b>{f(sum(visible, "cash_in_inr"))}</b>.</p>
         </div>
         <div className="head-actions">
-          <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} aria-label="Месяц" />
+          <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} aria-label="Отчётный месяц" />
+          <CurrencySwitch />
           <button className="btn ghost" onClick={csv}>Excel (CSV)</button>
           {closed ? <span className="pill ok">Закрыт {closed.closed_by}</span> : can("close_month") && (
             sure ? <><button className="btn danger" onClick={close}>Закрыть {monthLabel(month)}</button><button className="btn ghost" onClick={() => setSure(false)}>Отмена</button></>
@@ -61,39 +88,18 @@ export default function Pnl() {
       </header>
       {sure && <div className="banner soft">После закрытия курс и ставки налогов фиксируются, строки месяца нельзя менять. Перед закрытием внесите курс RBI на последний день месяца в «Справочники → Курсы».</div>}
       {provisional && !closed && <div className="banner soft">Курс за этот месяц ещё не внесён — цифры посчитаны по курсу прошлого месяца.</div>}
+      {missing(month) && <div className="banner soft">Нет курса {cur} к INR за этот месяц — суммы в {cur} не показаны. Внесите курс в «Справочники → Курсы».</div>}
       <ErrorLine error={err || error} />
       <section className="card">
-        <div className="table-wrap">
-          <table>
-            <thead><tr>
-              <th>Job №</th><th>Клиент</th><th>Страна</th><th>Инспектор</th><th>Чья</th><th>Статус</th><th className="r">Кол-во</th><th className="r">Ставка</th>
-              <th className="r">Курс</th><th className="r">Выручка</th><th className="r">GST</th><th className="r">TDS</th><th className="r">Приход</th>
-              <th className="r">Админка</th><th className="r">Подряд</th><th className="r">РКО</th><th className="r">Прибыль</th><th className="r">Маржа</th>
-            </tr></thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td className="mono"><Link to={`/jobs/${r.job_id}`}>{r.job_number}</Link></td><td>{r.client_name}</td><td>{r.country ?? "—"}</td>
-                  <td>{r.inspector_name ?? "—"}</td><td>{r.owner ?? "—"}</td><td><Pill status={r.job_status} /></td>
-                  <td className="r">{num(r.quantity, 2).replace(/\.00$/, "")}</td><td className="r">{num(r.client_rate, 2).replace(/\.00$/, "")} {r.currency}</td>
-                  <td className="r">{r.currency === "INR" ? "—" : num(r.calc.fx, 2)}</td>
-                  <td className="r">{inr(r.calc.base_inr)}</td><td className="r">{inr(r.calc.gst_inr)}</td><td className="r">{inr(r.calc.tds_inr)}</td>
-                  <td className="r">{inr(r.calc.cash_in_inr)}</td><td className="r">{inr(r.calc.admin_inr)}</td><td className="r">{inr(r.calc.cost_inr)}</td>
-                  <td className="r">{inr(r.calc.rko_inr)}</td><td className={"r " + ((r.calc.net_inr ?? 0) < 0 ? "neg" : "")}><b>{inr(r.calc.net_inr)}</b></td>
-                  <td className="r">{pct(r.calc.margin)}</td>
-                </tr>
-              ))}
-              {!loading && rows.length === 0 && <tr><td colSpan={18} className="empty">За этот месяц строк нет. Строки добавляются в карточке работы.</td></tr>}
-            </tbody>
-            {rows.length > 0 && (
-              <tfoot><tr>
-                <td colSpan={9}>Итого, {rows.length} строк · {num(sum("man_days"), 1)} MD</td>
-                {["base_inr", "gst_inr", "tds_inr", "cash_in_inr", "admin_inr", "cost_inr", "rko_inr", "net_inr"].map((k) => <td key={k} className="r">{inr(sum(k))}</td>)}
-                <td className="r">{pct(sum("base_inr") ? (sum("net_inr") / sum("base_inr")) * 100 : null)}</td>
-              </tr></tfoot>
-            )}
-          </table>
-        </div>
+        <DataTable rows={rows} cols={cols} onVisible={setVisible}
+          empty={loading ? "Загрузка…" : "За этот месяц строк нет. Строки добавляются в карточке работы в Табеле."}
+          footer={(rs) => (
+            <tr>
+              <td colSpan={9}>Итого, {rs.length} строк · {num(sum(rs, "man_days"), 1)} MD</td>
+              {MONEY.map((k) => <td key={k} className="r">{f(sum(rs, k))}</td>)}
+              <td className="r">{pct(sum(rs, "base_inr") ? (sum(rs, "net_inr") / sum(rs, "base_inr")) * 100 : null)}</td>
+            </tr>
+          )} />
       </section>
       <Toast text={toast} onDone={() => setToast(null)} />
     </div>

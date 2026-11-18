@@ -1,19 +1,21 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, downloadCsv, inr, num } from "../api";
+import { api, compactDates, downloadCsv, money, num } from "../api";
 import { useAuth } from "../auth";
+import { JobDatesModal, JobsCalendar } from "../components/Calendar";
 import { EditForm, Field } from "../components/CrudTable";
-import { JobsCalendar } from "../components/Calendar";
+import DataTable, { Col } from "../components/DataTable";
 import { ErrorLine, Pill, useAsync } from "../components/ui";
-import { JOB_STATUSES } from "../refs";
+import { CurrencySwitch, useCurrency } from "../currency";
+import { JOB_STATUSES, useRef_ } from "../refs";
 
 export const jobFields: Field[] = [
   { key: "job_number", label: "Job number", required: true, hint: "Формат ГГ.КК-ННН, например 26.19-478" },
   { key: "client_id", label: "Клиент", type: "ref", ref: "clients", required: true },
   { key: "client_contact", label: "Контакт клиента" },
   { key: "client_job_number", label: "Client Job Number" },
-  { key: "vendor", label: "Завод (vendor)", wide: true },
-  { key: "country", label: "Страна" },
+  { key: "vendor", label: "Завод (Vendor)", type: "suggest", ref: "vendors", wide: true, hint: "Начните вводить — система предложит заводы из справочника; новый завод добавится сам" },
+  { key: "country", label: "Страна", type: "suggest", ref: "countries" },
   { key: "owner_id", label: "Чья", type: "ref", ref: "users", refLabel: "initials" },
   { key: "status", label: "Статус", type: "select", options: JOB_STATUSES, required: true },
   { key: "notes", label: "Примечания", type: "textarea" },
@@ -22,16 +24,61 @@ export const jobFields: Field[] = [
 export default function Jobs() {
   const nav = useNavigate();
   const { can } = useAuth();
+  const { cur, conv } = useCurrency();
+  const inspectorRows = useRef_("inspectors");
+  const inspectors = useMemo(() => new Map(inspectorRows.map((i) => [i.id, i])), [inspectorRows]);
   const [status, setStatus] = useState("В работе,Пауза");
-  const [q, setQ] = useState("");
   const [add, setAdd] = useState(false);
   const [cal, setCal] = useState(false);
-  const { data, error, loading } = useAsync(() => api.get<any[]>(`/jobs?status=${encodeURIComponent(status)}`), [status]);
-  const rows = (data ?? []).filter((j) => !q || `${j.job_number} ${j.client_name} ${j.vendor} ${j.country}`.toLowerCase().includes(q.toLowerCase()));
+  const [dates, setDates] = useState<any | null>(null);
+  const [visible, setVisible] = useState<any[]>([]);
+  const { data, error, loading, reload } = useAsync(() => api.get<any[]>(`/jobs?status=${encodeURIComponent(status)}`), [status]);
+
+  // revenue and profit in the chosen currency: each month at its own rate
+  const inCur = useCallback((j: any, k: "base_inr" | "net_inr") => {
+    let sum = 0;
+    for (const [m, t] of Object.entries<any>(j.totals_by_month ?? {})) {
+      const v = conv(t[k], m);
+      if (v == null) return null;
+      sum += v;
+    }
+    return sum;
+  }, [conv]);
+
+  const rows = useMemo(() => (data ?? []).map((j) => ({
+    ...j, revenue: inCur(j, "base_inr"), net: inCur(j, "net_inr"), md: j.totals.man_days, date_text: compactDates(j.dates ?? [], 99),
+  })), [data, inCur]);
+
+  const cols: Col[] = [
+    { key: "status", label: "Статус", render: (j) => <><Pill status={j.status} /></> },
+    { key: "job_number", label: "Job №", cls: "mono" },
+    { key: "client_name", label: "Клиент" },
+    { key: "vendor", label: "Завод", cls: "wrap" },
+    { key: "country", label: "Страна" },
+    { key: "owner", label: "Чья" },
+    {
+      key: "date_text", label: "Дата", text: (j) => compactDates(j.dates ?? [], 99) || null,
+      render: (j) => (
+        <button type="button" className={"date-cell" + (j.dates?.length ? "" : " empty-dates")} title="Открыть календарь дат инспекции"
+          onClick={(e) => { e.stopPropagation(); setDates(j); }}>
+          {j.dates?.length ? compactDates(j.dates) : "указать даты"}
+        </button>
+      ),
+    },
+    { key: "md", label: "MD", align: "r", render: (j) => num(j.md, 1) },
+    { key: "revenue", label: `Выручка, ${cur}`, align: "r", render: (j) => money(j.revenue, cur) },
+    { key: "net", label: `Прибыль, ${cur}`, align: "r", render: (j) => <span className={(j.net ?? 0) < 0 ? "neg" : ""}>{money(j.net, cur)}</span> },
+  ];
 
   return (
     <div className="page">
-      <header className="page-head"><h1>Работы</h1><button className="btn" onClick={() => setCal(true)}>Календарь дат</button></header>
+      <header className="page-head">
+        <h1>Табель</h1>
+        <div className="head-actions">
+          <CurrencySwitch />
+          <button className="btn" onClick={() => setCal(true)}>Календарь дат</button>
+        </div>
+      </header>
       <section className="card">
         <div className="toolbar">
           <div className="seg">
@@ -39,34 +86,20 @@ export default function Jobs() {
               <button key={l} className={status === v ? "on" : ""} onClick={() => setStatus(v)}>{l}</button>
             ))}
           </div>
-          <span className="muted">{loading ? "Загрузка…" : `${rows.length} работ`}</span>
+          <span className="muted">{loading ? "Загрузка…" : `${visible.length} работ`}</span>
           <div className="spacer" />
-          <input className="search" placeholder="Job №, клиент, завод" value={q} onChange={(e) => setQ(e.target.value)} />
-          <button className="btn ghost" onClick={() => downloadCsv("jobs.csv", rows.map((r) => ({ ...r, base: r.totals.base_inr, net: r.totals.net_inr, md: r.totals.man_days })),
-            [{ key: "job_number", label: "Job" }, { key: "client_name", label: "Клиент" }, { key: "country", label: "Страна" }, { key: "owner", label: "Чья" },
-             { key: "status", label: "Статус" }, { key: "md", label: "MD" }, { key: "base", label: "Выручка INR" }, { key: "net", label: "Прибыль INR" }])}>CSV</button>
+          <button className="btn ghost" onClick={() => downloadCsv("tabel.csv", visible, [
+            { key: "job_number", label: "Job" }, { key: "client_name", label: "Клиент" }, { key: "vendor", label: "Завод" }, { key: "country", label: "Страна" },
+            { key: "owner", label: "Чья" }, { key: "status", label: "Статус" }, { key: "date_text", label: "Даты" }, { key: "md", label: "MD" },
+            { key: "revenue", label: `Выручка ${cur}` }, { key: "net", label: `Прибыль ${cur}` }])}>CSV</button>
           {can("write") && <button className="btn primary" onClick={() => setAdd(true)}>Новая работа</button>}
         </div>
         <ErrorLine error={error} />
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Статус</th><th>Job №</th><th>Клиент</th><th>Завод</th><th>Страна</th><th>Чья</th><th>Месяцы</th><th className="r">MD</th><th className="r">Выручка</th><th className="r">Прибыль</th></tr></thead>
-            <tbody>
-              {rows.map((j) => (
-                <tr key={j.id} className="clickable" onClick={() => nav(`/jobs/${j.id}`)}>
-                  <td><Pill status={j.status} />{j.pre_november && <span className="pill mute" title="Открыта до запуска системы">до ноября</span>}</td>
-                  <td className="mono">{j.job_number}</td><td>{j.client_name}</td><td className="wrap">{j.vendor ?? "—"}</td><td>{j.country ?? "—"}</td>
-                  <td>{j.owner ?? "—"}</td><td>{j.months.join(", ")}</td>
-                  <td className="r">{num(j.totals.man_days, 1)}</td><td className="r">{inr(j.totals.base_inr)}</td>
-                  <td className={"r " + (j.totals.net_inr < 0 ? "neg" : "")}>{inr(j.totals.net_inr)}</td>
-                </tr>
-              ))}
-              {!loading && rows.length === 0 && <tr><td colSpan={10} className="empty">Работ не найдено.</td></tr>}
-            </tbody>
-          </table>
-        </div>
+        <DataTable rows={rows} cols={cols} onRowClick={(j) => nav(`/jobs/${j.id}`)} onVisible={setVisible}
+          empty={loading ? "Загрузка…" : "Работ не найдено."} />
       </section>
       {cal && <JobsCalendar onClose={() => setCal(false)} />}
+      {dates && <JobDatesModal job={dates} inspectors={inspectors} onClose={() => setDates(null)} onSaved={reload} />}
       {add && (
         <EditForm title="Новая работа" fields={jobFields} initial={{ status: "В работе" }} onCancel={() => setAdd(false)}
           onSave={async (d) => { const j = await api.post("/jobs", d); nav(`/jobs/${j.id}`); }} />

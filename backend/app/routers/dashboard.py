@@ -67,13 +67,18 @@ def dashboard(period: str = "all", client_id: int | None = None, region: str | N
     clients = {c.id: c for c in db.scalars(select(Client))}
     inspectors = {i.id: i.name for i in db.scalars(select(Inspector))}
 
+    missing_rate = set()
+
     def conv(inr: float | None, month: str) -> float:
         if inr is None:
             return 0.0
         if currency == "INR":
             return inr
         fx = ctx.fx(month, currency)
-        return inr / float(fx.rate) if fx.rate else 0.0
+        if not fx.rate:
+            missing_rate.add(month)
+            return 0.0
+        return inr / float(fx.rate)
 
     rows = []
     provisional_months = set()
@@ -172,6 +177,7 @@ def dashboard(period: str = "all", client_id: int | None = None, region: str | N
     return {
         "currency": currency,
         "provisional_months": sorted(provisional_months),
+        "missing_rate_months": sorted(missing_rate),
         "kpi": kpi,
         "monthly": monthly,
         "top_clients": group("client")[:10],
