@@ -36,16 +36,24 @@ ALIAS = {"Клиент": "client", "Client Name": "client", "№ бизнеса"
          "Invoice Amount": "invoice", "Приход на р/с с учетом TDS и GST": "income", "$/€": "fx",
          "Client Project Coordinator": "contact", "Vendor Name": "vendor",
          "Client Job Number / Client Name": "client_job"}
-CLIENT_FIX = {"COPERION": "Coperion", "IRCLass": "IRClass", "TUVTPS": "TUV TPS", "MASMarine": "MAS Marine", "APPLUS": "Applus"}
+CLIENT_FIX = {"COPERION": "Coperion", "IRCLass": "IRClass", "TUVTPS": "TUV TPS", "MASMarine": "MAS Marine", "APPLUS": "Applus",
+              # confirmed by MB on 18 Nov 2026
+              "BV Italy": "BV Italia", "TUV R QATAR": "TUV Rheinland Qatar", "TUV Oman": "TUV Rheinland Oman",
+              "TUVR Oman": "TUV Rheinland Oman", "TUV R Oman": "TUV Rheinland Oman"}
 COUNTRY_FIX = {"China .": "China", "Gernany": "Germany", "Afrika": "Africa", "Marocco": "Morocco"}
 OWNER = {"Л": "LM", "М": "MB", "С": "SV", "C": "SV", "Лю": "LR", "Д": "Д", "А": "А", "A": "А", "Т": "Т"}
 REQ_STATUS = {"В процесссе": "В процессе", "В процессе": "В процессе", "Выполнено": "Выполнено", "Отмена": "Отмена",
               "Принято в работу": "Принято в работу", "Перенос": "Перенос"}
 SHEET_MONTH = {"Июль": "2026-07", "Август": "2026-08", "Сентябрь": "2026-09", "Октябрь": "2026-10", "Ноябрь": "2026-11"}
-# merges checked by hand on top of the automatic rules in scripts/names.py
-MANUAL_MERGE = {"Andrei Kostiyuk": "Andrii Kostiuk", "Ceng Meng": "Cheng Meng", "Chenmeng": "Cheng Meng", "ChenMeng": "Cheng Meng",
+# merges confirmed by MB on 18 Nov 2026, on top of the automatic rules in scripts/names.py
+MANUAL_MERGE = {"Lin Chenghao": "Chonghao Lin", "Masud": "Masud Ramezanian", "Mojtaba": "Mojtaba Shahvali",
+                "Orlando": "Orlando De Leon", "Andrei Kostiyuk": "Andrii Kostiuk", "Ceng Meng": "Cheng Meng", "Chenmeng": "Cheng Meng", "ChenMeng": "Cheng Meng",
                 "Vasyliev Marko": "Mark Vasilyev", "Mohammad Sheydaeemr": "Mohammad Sheydaeemeehr",
                 "Saad Mahmoud": "Saad Mehmood", "Soroush Soufi": "Soroush Soroufi", "K Parameswaran": "Parameswaran Kaliraj"}
+
+
+# spellings that look alike but are different (or unconfirmed) people: never merged
+KEEP_SEPARATE = {"Vitalik", "Rahim"}
 
 
 def norm(x) -> str:
@@ -155,7 +163,10 @@ class Importer:
 
         # inspectors: merge spelling variants, then hand-checked merges
         auto = canonical_groups(names)
-        self.alias = {k: MANUAL_MERGE.get(v, v) for k, v in auto.items()}
+        for k in KEEP_SEPARATE:
+            if k in auto:
+                auto[k] = k
+        self.alias = {k: MANUAL_MERGE.get(k, MANUAL_MERGE.get(v, v)) for k, v in auto.items()}
         merged = defaultdict(set)
         for k, v in self.alias.items():
             merged[v].add(k)
@@ -182,7 +193,7 @@ class Importer:
         seen: dict[str, str] = {}
         for n, _ in client_names.most_common():
             key = re.sub(r"[\s._-]+", "", n.lower())
-            if not n or key in seen:
+            if not n or key in seen or "/" in n:  # "BV / NORD" is a typo in the request log
                 continue
             seen[key] = n
             c = Client(name=n, default_currency="USD")
