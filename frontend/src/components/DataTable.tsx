@@ -10,6 +10,8 @@ export type Col = {
   cls?: string;
   filter?: boolean; // default true
   sortNumeric?: boolean;
+  optional?: boolean; // hidden until the user turns it on in «Столбцы»
+  total?: (rows: any[]) => React.ReactNode; // footer cell for this column
 };
 
 type Props = {
@@ -23,7 +25,58 @@ type Props = {
   onVisible?: (rows: any[]) => void; // rows left after filters, e.g. for totals or CSV
   footer?: (rows: any[]) => React.ReactNode;
   className?: string;
+  storageKey?: string; // remembers which optional columns are shown
+  footLabel?: (rows: any[]) => React.ReactNode; // first footer cell when columns have totals
 };
+
+function loadShown(key?: string): string[] | null {
+  if (!key) return null;
+  try {
+    const v = localStorage.getItem("ebfi.cols." + key);
+    return v ? JSON.parse(v) : null;
+  } catch {
+    return null;
+  }
+}
+
+function ColumnPicker({ cols, shown, setShown }: { cols: Col[]; shown: Set<string>; setShown: (s: Set<string>) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const out = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    document.addEventListener("mousedown", out);
+    return () => document.removeEventListener("mousedown", out);
+  }, [open]);
+  const extra = cols.filter((c) => c.optional);
+  const on = extra.filter((c) => shown.has(c.key)).length;
+  return (
+    <div className="colpick" ref={ref}>
+      <button type="button" className="btn small ghost" onClick={() => setOpen(!open)} aria-expanded={open}>
+        Столбцы{on ? ` · +${on}` : ""} ▾
+      </button>
+      {open && (
+        <div className="colpick-menu">
+          <p className="muted small">Дополнительные столбцы</p>
+          {extra.map((c) => (
+            <label key={c.key} className="fmenu-item">
+              <input type="checkbox" checked={shown.has(c.key)} onChange={() => {
+                const n = new Set(shown);
+                n.has(c.key) ? n.delete(c.key) : n.add(c.key);
+                setShown(n);
+              }} />
+              <span className="fmenu-val">{c.label}</span>
+            </label>
+          ))}
+          <div className="fmenu-foot">
+            <button type="button" className="btn small ghost" onClick={() => setShown(new Set())}>Скрыть все</button>
+            <button type="button" className="btn small ghost" onClick={() => setShown(new Set(extra.map((c) => c.key)))}>Показать все</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const BLANK = "(пусто)";
 const asText = (v: unknown) => (v === null || v === undefined || v === "" ? BLANK : String(v));
@@ -107,7 +160,19 @@ function FilterMenu({ col, rows, selected, onChange, onSort, close, at }: {
   );
 }
 
-export default function DataTable({ rows, cols, rowKey, onRowClick, actions, empty, filters = true, onVisible, footer, className }: Props) {
+export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, actions, empty, filters = true, onVisible, footer, className, storageKey, footLabel }: Props) {
+  const [shownExtra, setShownExtra] = useState<Set<string>>(() => new Set(loadShown(storageKey) ?? []));
+  const saveShown = (s: Set<string>) => {
+    setShownExtra(s);
+    try {
+      if (storageKey) localStorage.setItem("ebfi.cols." + storageKey, JSON.stringify([...s]));
+    } catch {
+      /* private window */
+    }
+  };
+  const cols = useMemo(() => allCols.filter((c) => !c.optional || shownExtra.has(c.key)), [allCols, shownExtra]);
+  const hasOptional = allCols.some((c) => c.optional);
+  const hasTotals = cols.some((c) => c.total);
   const [sel, setSel] = useState<Record<string, Set<string> | undefined>>({});
   const [open, setOpen] = useState<{ key: string; at: DOMRect } | null>(null);
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
@@ -135,10 +200,14 @@ export default function DataTable({ rows, cols, rowKey, onRowClick, actions, emp
 
   return (
     <div className={"table-wrap " + (className ?? "")}>
-      {filters && active > 0 && (
+      {((filters && active > 0) || hasOptional) && (
         <div className="filter-note">
-          Фильтров: {active} · показано {visible.length} из {rows.length}
-          <button type="button" className="btn small ghost" onClick={() => setSel({})}>Сбросить фильтры</button>
+          {filters && active > 0 && <>
+            Фильтров: {active} · показано {visible.length} из {rows.length}
+            <button type="button" className="btn small ghost" onClick={() => setSel({})}>Сбросить фильтры</button>
+          </>}
+          <span className="spacer" />
+          {hasOptional && <ColumnPicker cols={allCols} shown={shownExtra} setShown={saveShown} />}
         </div>
       )}
       <table>
@@ -178,6 +247,16 @@ export default function DataTable({ rows, cols, rowKey, onRowClick, actions, emp
           {visible.length === 0 && <tr><td colSpan={span} className="empty">{rows.length ? "Под фильтры ничего не подходит." : empty ?? "Нет данных."}</td></tr>}
         </tbody>
         {footer && visible.length > 0 && <tfoot>{footer(visible)}</tfoot>}
+        {!footer && hasTotals && visible.length > 0 && (
+          <tfoot>
+            <tr>
+              {cols.map((c, i) => (
+                <td key={c.key} className={c.align === "r" ? "r" : ""}>{c.total ? c.total(visible) : i === 0 ? footLabel?.(visible) : null}</td>
+              ))}
+              {actions && <td />}
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   );

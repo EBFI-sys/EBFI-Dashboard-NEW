@@ -1,3 +1,4 @@
+import { Pencil } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, dateLabel, downloadCsv, money, monthLabel, num } from "../api";
 import { useAuth } from "../auth";
@@ -22,6 +23,7 @@ export type Field = {
   text?: (row: any) => string | number | null | undefined; // value for column filters when `render` is used
   wide?: boolean;
   hint?: string;
+  optional?: boolean; // column hidden until turned on in «Столбцы»
 };
 
 type Props = {
@@ -38,6 +40,7 @@ type Props = {
   csvName?: string;
   onRowClick?: (row: any) => void;
   allowCreate?: boolean;
+  periodLabel?: string;
   periodKey?: string; // date field to filter by period (month or custom range)
   columnFilters?: boolean; // Excel-style filters in column headers (default true)
 };
@@ -171,6 +174,8 @@ export function cell(f: Field, row: any): React.ReactNode {
       return <Pill status={v} />;
     case "ref":
       return <RefLabel f={f} id={v} />;
+    case "dates": // imported cells may hold "2026-11-20 00:00:00"
+      return v ? String(v).replace(/(\d{4})-(\d\d)-(\d\d)(?:[ T]00:00:00)?/g, "$3.$2.$1") : "—";
     default:
       return v ?? "—";
   }
@@ -255,7 +260,8 @@ export default function CrudTable(p: Props) {
     label: c.label,
     render: (r: any) => cell(c, r),
     align: c.type === "money" || c.type === "number" ? "r" : undefined,
-    cls: c.type === "textarea" ? "wrap" : undefined,
+    cls: c.type === "textarea" ? "wrap" : c.type === "date" ? "nowrap" : c.wide || c.type === "dates" || c.type === "suggest" ? "brk" : undefined,
+    optional: c.optional,
     text: (r: any) => {
       if (c.text) return c.text(r);
       const v = r[c.key];
@@ -303,7 +309,8 @@ export default function CrudTable(p: Props) {
         <div className="spacer" />
         {p.periodKey && (
           <>
-            <select value={period} onChange={(e) => setPeriod(e.target.value)} aria-label="Период">
+            {p.periodLabel && <span className="muted small">{p.periodLabel}</span>}
+            <select value={period} onChange={(e) => setPeriod(e.target.value)} aria-label={p.periodLabel ?? "Период"}>
               <option value="all">Весь период</option>
               {periods.months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
               {periods.quarters.map((qq) => <option key={qq} value={qq}>{qq.replace("Q", "Квартал ")}</option>)}
@@ -324,11 +331,11 @@ export default function CrudTable(p: Props) {
         {canWrite && p.allowCreate !== false && <button className="btn primary" onClick={() => setEdit({ ...(p.defaults ?? {}) })}>Добавить</button>}
       </div>
       <ErrorLine error={error} />
-      <DataTable rows={rows} cols={tableCols} filters={p.columnFilters !== false} onRowClick={p.onRowClick} onVisible={setVisible}
+      <DataTable rows={rows} cols={tableCols} storageKey={p.endpoint} filters={p.columnFilters !== false} onRowClick={p.onRowClick} onVisible={setVisible}
         empty={loading ? "Загрузка…" : p.allowCreate === false ? "Пока пусто." : "Пока пусто. Нажмите «Добавить», чтобы создать первую запись."}
         actions={(r) => (<>
           {p.rowActions?.(r, reload)}
-          {canWrite && <button className="btn small ghost" onClick={() => setEdit(r)}>Изменить</button>}
+          {canWrite && <button className="btn small ghost icon" title="Изменить" aria-label="Изменить" onClick={() => setEdit(r)}><Pencil size={14} aria-hidden /></button>}
         </>)} />
       {edit && (
         <>

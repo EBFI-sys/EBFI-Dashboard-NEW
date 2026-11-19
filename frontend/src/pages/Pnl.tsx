@@ -7,6 +7,7 @@ import { ErrorLine, Pill, Toast, useAsync } from "../components/ui";
 import { CurrencySwitch, useCurrency } from "../currency";
 
 const MONEY = ["base_inr", "gst_inr", "tds_inr", "cash_in_inr", "admin_inr", "cost_inr", "rko_inr", "net_inr"] as const;
+const OPTIONAL_MONEY = new Set(["gst_inr", "tds_inr", "cash_in_inr", "admin_inr", "rko_inr"]);
 const LABEL: Record<string, string> = {
   base_inr: "Выручка", gst_inr: "GST", tds_inr: "TDS", cash_in_inr: "Приход", admin_inr: "Админка", cost_inr: "Подряд", rko_inr: "РКО", net_inr: "Прибыль",
 };
@@ -43,19 +44,20 @@ export default function Pnl() {
   const cols: Col[] = [
     { key: "job_number", label: "Job №", cls: "mono", render: (r) => <Link to={`/jobs/${r.job_id}`}>{r.job_number}</Link> },
     { key: "client_name", label: "Клиент" },
-    { key: "country", label: "Страна" },
+    { key: "country", label: "Страна", optional: true },
     { key: "inspector_name", label: "Инспектор" },
     { key: "owner", label: "Чья" },
     { key: "job_status", label: "Статус", render: (r) => <Pill status={r.job_status} /> },
-    { key: "quantity", label: "Кол-во", align: "r", render: (r) => num(r.quantity, 2).replace(/\.00$/, "") },
-    { key: "client_rate", label: "Ставка", align: "r", text: (r) => `${r.client_rate} ${r.currency}`, sortNumeric: false,
+    { key: "quantity", label: "Кол-во", align: "r", total: (rs) => `${num(sum(rs, "man_days"), 1)} MD`, render: (r) => num(r.quantity, 2).replace(/\.00$/, "") },
+    { key: "client_rate", label: "Ставка", align: "r", optional: true, text: (r) => `${r.client_rate} ${r.currency}`, sortNumeric: false,
       render: (r) => `${num(r.client_rate, 2).replace(/\.00$/, "")} ${r.currency}` },
-    { key: "fx", label: "Курс", align: "r", text: (r) => r.calc.fx, render: (r) => (r.currency === "INR" ? "—" : num(r.calc.fx, 2)) },
+    { key: "fx", label: "Курс", align: "r", optional: true, text: (r) => r.calc.fx, render: (r) => (r.currency === "INR" ? "—" : num(r.calc.fx, 2)) },
     ...MONEY.map((k): Col => ({
-      key: k, label: LABEL[k], align: "r", text: (r) => r.calc[k],
+      key: k, label: LABEL[k], align: "r", text: (r) => r.calc[k], optional: OPTIONAL_MONEY.has(k), total: (rs) => f(sum(rs, k)),
       render: (r) => k === "net_inr" ? <b className={(r.calc[k] ?? 0) < 0 ? "neg" : ""}>{f(r.calc[k])}</b> : f(r.calc[k]),
     })),
-    { key: "margin", label: "Маржа", align: "r", text: (r) => r.calc.margin, render: (r) => pct(r.calc.margin) },
+    { key: "margin", label: "Маржа", align: "r", text: (r) => r.calc.margin, render: (r) => pct(r.calc.margin),
+      total: (rs) => pct(sum(rs, "base_inr") ? (sum(rs, "net_inr") / sum(rs, "base_inr")) * 100 : null) },
   ];
 
   const csv = () => downloadCsv(`pnl-${month}-${cur}.csv`, visible.map((r) => ({
@@ -93,13 +95,7 @@ export default function Pnl() {
       <section className="card">
         <DataTable rows={rows} cols={cols} onVisible={setVisible}
           empty={loading ? "Загрузка…" : "За этот месяц строк нет. Строки добавляются в карточке работы в Табеле."}
-          footer={(rs) => (
-            <tr>
-              <td colSpan={9}>Итого, {rs.length} строк · {num(sum(rs, "man_days"), 1)} MD</td>
-              {MONEY.map((k) => <td key={k} className="r">{f(sum(rs, k))}</td>)}
-              <td className="r">{pct(sum(rs, "base_inr") ? (sum(rs, "net_inr") / sum(rs, "base_inr")) * 100 : null)}</td>
-            </tr>
-          )} />
+          storageKey="pnl" footLabel={(rs) => `Итого, ${rs.length} строк`} />
       </section>
       <Toast text={toast} onDone={() => setToast(null)} />
     </div>

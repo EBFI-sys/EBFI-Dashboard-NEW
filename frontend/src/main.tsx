@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { BookOpen, CalendarRange, FileText, Gauge, History, Inbox, Landmark, LineChart, UserCog, Wallet } from "lucide-react";
 import { AuthProvider, useAuth } from "./auth";
 import { CurrencyProvider } from "./currency";
 import "./styles.css";
@@ -19,15 +20,21 @@ import Tds from "./pages/Tds";
 import Users from "./pages/Users";
 
 const NAV = [
-  { to: "/", label: "Дашборд", end: true },
-  { to: "/requests", label: "Заявки" },
-  { to: "/jobs", label: "Табель" },
-  { to: "/pnl", label: "P&L по месяцам" },
-  { to: "/sales", label: "Инвойсы клиентам" },
-  { to: "/payouts", label: "Счета инспекторов" },
-  { to: "/tds", label: "Реестр TDS" },
-  { to: "/references", label: "Справочники" },
-  { to: "/audit", label: "Журнал изменений" },
+  { group: "Работа", items: [
+    { to: "/", label: "Дашборд", end: true, icon: Gauge },
+    { to: "/requests", label: "Заявки", icon: Inbox },
+    { to: "/jobs", label: "Табель", icon: CalendarRange },
+  ] },
+  { group: "Финансы", items: [
+    { to: "/pnl", label: "P&L по месяцам", icon: LineChart },
+    { to: "/sales", label: "Инвойсы клиентам", icon: FileText },
+    { to: "/payouts", label: "Счета инспекторов", icon: Wallet },
+    { to: "/tds", label: "Реестр TDS", icon: Landmark },
+  ] },
+  { group: "Система", items: [
+    { to: "/references", label: "Справочники", icon: BookOpen },
+    { to: "/audit", label: "Журнал изменений", icon: History },
+  ] },
 ];
 
 function Shell() {
@@ -40,13 +47,18 @@ function Shell() {
       <aside className="side">
         <div className="side-brand">
           <span className="brand-mark small">EBFI</span>
-          <span>Ops</span>
+          <span>Ops<small>Engineering Bureau International</small></span>
         </div>
         <nav>
-          {NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => (isActive ? "active" : "")}>{n.label}</NavLink>
+          {NAV.map((g) => (
+            <div key={g.group} style={{ display: "contents" }}>
+              <div className="nav-group">{g.group}</div>
+              {g.items.map((n) => (
+                <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => (isActive ? "active" : "")}><n.icon aria-hidden />{n.label}</NavLink>
+              ))}
+              {g.group === "Система" && can("users") && <NavLink to="/users"><UserCog aria-hidden />Пользователи</NavLink>}
+            </div>
           ))}
-          {can("users") && <NavLink to="/users">Пользователи</NavLink>}
         </nav>
         <div className="side-foot">
           <NavLink to="/profile" className="me">

@@ -24,7 +24,8 @@ function monthsBack(n: number) {
   return out;
 }
 
-const C1 = "#3d6fb6", C2 = "#c47a2c", GRID = "var(--line)";
+const C1 = "#4cc9f0", C2 = "#a5b4fc", GRID = "rgba(255,255,255,0.07)";
+const TT = { contentStyle: { background: "#141c2c", border: "1px solid rgba(255,255,255,0.16)", borderRadius: 10, color: "#e8edf5" }, cursor: { fill: "rgba(255,255,255,0.04)" } };
 
 export default function Dashboard() {
   const clients = useRef_("clients");
@@ -117,9 +118,9 @@ export default function Dashboard() {
                   <CartesianGrid stroke={GRID} vertical={false} />
                   <XAxis dataKey="label" tick={{ fontSize: 12 }} />
                   <YAxis tickFormatter={(v) => m(v)} width={80} tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(v: number) => m(v)} />
+                  <Tooltip {...TT} formatter={(v: number) => m(v)} />
                   <Legend />
-                  <Bar dataKey="revenue" name="Выручка" fill={C1} radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="revenue" name="Выручка" fill={C1} radius={[6, 6, 0, 0]} maxBarSize={72} />
                   <Line dataKey="net" name="Чистая прибыль" stroke={C2} strokeWidth={2.5} dot />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -133,10 +134,10 @@ export default function Dashboard() {
                   <CartesianGrid stroke={GRID} horizontal={false} />
                   <XAxis type="number" tickFormatter={(v) => m(v)} tick={{ fontSize: 12 }} />
                   <YAxis type="category" dataKey="client" width={150} tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(v: number) => m(v)} />
+                  <Tooltip {...TT} formatter={(v: number) => m(v)} />
                   <Legend />
-                  <Bar dataKey="revenue" name="Выручка" fill={C1} />
-                  <Bar dataKey="net" name="Чистая прибыль" fill={C2} />
+                  <Bar dataKey="revenue" name="Выручка" fill={C1} radius={[0, 6, 6, 0]} />
+                  <Bar dataKey="net" name="Чистая прибыль" fill={C2} radius={[0, 6, 6, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

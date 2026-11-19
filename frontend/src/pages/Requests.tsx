@@ -8,8 +8,8 @@ import { CURRENCIES } from "../refs";
 export const REQ_STATUSES = ["В процессе", "CV отправлены", "Принято в работу", "Выполнено", "Перенос", "Отмена"];
 
 const fields: Field[] = [
-  { key: "received_date", label: "Дата", type: "date" },
-  { key: "type", label: "Тип", type: "select", options: ["Inspection", "Audit", "Expediting"], required: true },
+  { key: "received_date", label: "Дата получения", type: "date" },
+  { key: "type", label: "Тип", type: "select", options: ["Inspection", "Audit", "Expediting"], required: true, optional: true },
   { key: "client_id", label: "Клиент", type: "ref", ref: "clients", required: true },
   { key: "final_client", label: "Конечный клиент", list: false },
   { key: "country", label: "Страна", type: "suggest", ref: "countries", required: true },
@@ -17,7 +17,7 @@ const fields: Field[] = [
   { key: "dates_text", label: "Даты", type: "dates" },
   { key: "client_rate", label: "Нам платят", type: "money", currencyKey: "client_currency" },
   { key: "client_currency", label: "Валюта клиента", type: "select", options: CURRENCIES, list: false },
-  { key: "inspector_rate", label: "Ставка инспектора", type: "money", currencyKey: "inspector_currency" },
+  { key: "inspector_rate", label: "Ставка инспектора", type: "money", currencyKey: "inspector_currency", optional: true },
   { key: "inspector_currency", label: "Валюта инспектора", type: "select", options: CURRENCIES, list: false },
   { key: "inspector_id", label: "Инспектор", type: "ref", ref: "inspectors" },
   { key: "proposed_cvs", label: "Отправленные CV", type: "textarea", list: false },
@@ -38,6 +38,8 @@ export default function Requests() {
         title={onlyOpen ? "Открытые заявки" : "Все заявки"}
         fields={fields}
         csvName="requests.csv"
+        periodKey="received_date"
+        periodLabel="Месяц получения"
         defaults={{ status: "В процессе", type: "Inspection", received_date: new Date().toISOString().slice(0, 10), client_currency: "USD", inspector_currency: "USD" }}
         filter={(r) => !onlyOpen || !["Выполнено", "Отмена"].includes(r.status)}
         toolbar={() => (
@@ -45,7 +47,7 @@ export default function Requests() {
         )}
         rowActions={(r, reload) =>
           r.job_id ? <Link className="btn small ghost" to={`/jobs/${r.job_id}`}>В табеле</Link>
-            : !["Отмена", "Выполнено"].includes(r.status) && <button className="btn small" onClick={() => setMk({ r, reload })}>Создать работу</button>
+            : !["Отмена", "Выполнено"].includes(r.status) && <button className="btn small" title="Создать работу в Табеле из этой заявки" onClick={() => setMk({ r, reload })}>+ Работа</button>
         }
       />
       {mk && <CreateJob req={mk.r} onClose={() => setMk(null)} onDone={mk.reload} />}
