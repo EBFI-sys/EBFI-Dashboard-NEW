@@ -5,7 +5,8 @@
     TDS        = B × tds_rate        (Indian clients only, goes to the TDS register, not a cost)
     Cash in    = B + GST − TDS
     Admin      = B × admin_rate
-    Contractor = (quantity × inspector rate + inspector overtime) × FX
+    Contractor = (quantity × inspector rate + inspector overtime) × FX of the inspector currency
+                 (the inspector may be paid in another currency than the client is billed in)
     RKO        = payment-method fee (0 until the payment-method list is filled)
     Net profit = B − Admin − Contractor − RKO
     Margin     = Net profit ÷ B
@@ -18,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from .models import Client, FxRate, Job, JobLine, MonthClose, PaymentMethod, Setting
 
-DEFAULTS = {"gst_rate": "0.18", "tds_rate": "0.10", "admin_rate": "0.18", "company_state": "Maharashtra"}
+DEFAULTS = {"gst_rate": "0.18", "tds_rate": "0.10", "admin_rate": "0.18", "company_state": "Maharashtra", "sales_invoice_last": ""}
 D0 = Decimal("0")
 
 
@@ -72,12 +73,15 @@ def _f(x) -> float:
 def compute_line(line: JobLine, job: Job, ctx: Context) -> dict:
     """Return the computed P&L figures for one line (all INR)."""
     closed = line.month in ctx.closed and line.snap_fx is not None
+    icur = line.inspector_currency or line.currency
     if closed:
         fx = Fx(Decimal(line.snap_fx), False, line.month)
+        fxi = Fx(Decimal(line.snap_fx_insp), False, line.month) if line.snap_fx_insp is not None else fx
         gst_r, tds_r, adm_r = Decimal(line.snap_gst), Decimal(line.snap_tds), Decimal(line.snap_admin)
         indian = bool(line.snap_indian)
     else:
         fx = ctx.fx(line.month, line.currency)
+        fxi = ctx.fx(line.month, icur)
         gst_r, tds_r, adm_r = ctx.gst, ctx.tds, ctx.admin
         client = ctx.client(job.client_id)
         indian = bool(client and client.is_indian)
@@ -88,20 +92,22 @@ def compute_line(line: JobLine, job: Job, ctx: Context) -> dict:
     out = {
         "amount_currency": _f(amount_cur),
         "cost_currency": _f(sub_cur),
+        "inspector_currency": icur,
+        "fx_insp": float(fxi.rate) if fxi.rate is not None else None,
         "fx": float(fx.rate) if fx.rate is not None else None,
-        "fx_provisional": fx.provisional,
+        "fx_provisional": fx.provisional or (icur != line.currency and fxi.provisional),
         "fx_source_month": fx.source_month,
         "is_indian": indian,
         "man_days": _f(qty) if line.unit == "day" else 0.0,
         "closed": closed,
     }
-    if fx.rate is None:  # no rate for this currency at all yet
+    if fx.rate is None or fxi.rate is None:  # no rate for this currency at all yet
         out.update(base_inr=None, gst_inr=None, tds_inr=None, cash_in_inr=None, admin_inr=None,
                    cost_inr=None, rko_inr=None, net_inr=None, margin=None)
         return out
 
     b = amount_cur * fx.rate
-    sub = sub_cur * fx.rate
+    sub = sub_cur * fxi.rate
     gst = b * gst_r if indian else D0
     tds = b * tds_r if indian else D0
     admin = b * adm_r
@@ -129,9 +135,14 @@ def snapshot_month(db: Session, month: str, ctx: Context) -> int:
         fx = ctx.fx(month, line.currency)
         if fx.rate is None or fx.provisional:
             raise ValueError(f"Нет зафиксированного курса {line.currency} за {month}")
+        icur = line.inspector_currency or line.currency
+        fxi = ctx.fx(month, icur)
+        if fxi.rate is None or fxi.provisional:
+            raise ValueError(f"Нет зафиксированного курса {icur} за {month}")
         client = ctx.client(job.client_id)
         live = compute_line(line, job, ctx)
         line.snap_fx = fx.rate
+        line.snap_fx_insp = fxi.rate
         line.snap_gst, line.snap_tds, line.snap_admin = ctx.gst, ctx.tds, ctx.admin
         line.snap_indian = bool(client and client.is_indian)
         line.snap_rko_inr = Decimal(str(live["rko_inr"] or 0))

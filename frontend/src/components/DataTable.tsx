@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Popover } from "./ui";
 
 /** One column of a DataTable. `text` gives the value used for filtering and sorting (defaults to row[key]). */
 export type Col = {
@@ -40,23 +41,16 @@ function loadShown(key?: string): string[] | null {
 }
 
 function ColumnPicker({ cols, shown, setShown }: { cols: Col[]; shown: Set<string>; setShown: (s: Set<string>) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const out = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    document.addEventListener("mousedown", out);
-    return () => document.removeEventListener("mousedown", out);
-  }, [open]);
+  const [open, setOpen] = useState<DOMRect | null>(null);
   const extra = cols.filter((c) => c.optional);
   const on = extra.filter((c) => shown.has(c.key)).length;
   return (
-    <div className="colpick" ref={ref}>
-      <button type="button" className="btn small ghost" onClick={() => setOpen(!open)} aria-expanded={open}>
+    <div className="colpick">
+      <button type="button" className="btn small ghost" onClick={(e) => setOpen(open ? null : e.currentTarget.getBoundingClientRect())} aria-expanded={!!open}>
         Столбцы{on ? ` · +${on}` : ""} ▾
       </button>
       {open && (
-        <div className="colpick-menu">
+        <Popover anchor={open} onClose={() => setOpen(null)} width={250} className="colpick-menu">
           <p className="muted small">Дополнительные столбцы</p>
           {extra.map((c) => (
             <label key={c.key} className="fmenu-item">
@@ -72,7 +66,7 @@ function ColumnPicker({ cols, shown, setShown }: { cols: Col[]; shown: Set<strin
             <button type="button" className="btn small ghost" onClick={() => setShown(new Set())}>Скрыть все</button>
             <button type="button" className="btn small ghost" onClick={() => setShown(new Set(extra.map((c) => c.key)))}>Показать все</button>
           </div>
-        </div>
+        </Popover>
       )}
     </div>
   );
@@ -89,7 +83,6 @@ function FilterMenu({ col, rows, selected, onChange, onSort, close, at }: {
   col: Col; rows: any[]; selected: Set<string> | undefined; onChange: (s: Set<string> | undefined) => void;
   onSort: (dir: 1 | -1) => void; close: () => void; at: DOMRect;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
   const [q, setQ] = useState("");
   const values = useMemo(() => {
     const counts = new Map<string, number>();
@@ -104,17 +97,6 @@ function FilterMenu({ col, rows, selected, onChange, onSort, close, at }: {
   const shown = values.filter(([v]) => !q || v.toLowerCase().includes(q.toLowerCase()));
   const isOn = (v: string) => !selected || selected.has(v);
 
-  useEffect(() => {
-    const out = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && close();
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && close();
-    setTimeout(() => document.addEventListener("mousedown", out));
-    document.addEventListener("keydown", esc);
-    return () => {
-      document.removeEventListener("mousedown", out);
-      document.removeEventListener("keydown", esc);
-    };
-  }, [close]);
-
   const toggle = (v: string) => {
     const s = new Set(selected ?? values.map(([x]) => x));
     s.has(v) ? s.delete(v) : s.add(v);
@@ -128,13 +110,12 @@ function FilterMenu({ col, rows, selected, onChange, onSort, close, at }: {
   };
 
   return (
-    <div className="fmenu" ref={ref} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`Фильтр: ${col.label}`}
-      style={{ top: Math.min(at.bottom + 4, window.innerHeight - 380), left: Math.max(8, Math.min(at.left - 120, window.innerWidth - 276)) }}>
+    <Popover anchor={at} onClose={close} width={280} className="fmenu">
       <div className="fmenu-sort">
         <button type="button" onClick={() => { onSort(1); close(); }}>Сортировать А → Я ↑</button>
         <button type="button" onClick={() => { onSort(-1); close(); }}>Сортировать Я → А ↓</button>
       </div>
-      <input autoFocus placeholder="Поиск значений" value={q} onChange={(e) => setQ(e.target.value)} />
+      <input autoFocus placeholder="Поиск значений" aria-label={`Поиск в столбце ${col.label}`} value={q} onChange={(e) => setQ(e.target.value)} />
       <label className="fmenu-item all">
         <input type="checkbox" checked={allShownOn} onChange={toggleShown} />
         {q ? "Все найденные" : "Выбрать все"}
@@ -156,7 +137,7 @@ function FilterMenu({ col, rows, selected, onChange, onSort, close, at }: {
         )}
         <button type="button" className="btn small primary" onClick={close}>Готово</button>
       </div>
-    </div>
+    </Popover>
   );
 }
 

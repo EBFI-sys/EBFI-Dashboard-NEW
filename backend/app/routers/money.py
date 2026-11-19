@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 from ..calc import Context, get_setting
 from ..config import settings
 from ..db import get_db
-from ..models import Client, Inspector, InspectorInvoice, Job, JobLine, PaymentMethod, SalesInvoice, TdsEntry, User
+from ..models import Setting, Client, Inspector, InspectorInvoice, Job, JobLine, PaymentMethod, SalesInvoice, TdsEntry, User
 from ..security import need
 from .crud import _commit, apply, make_crud, to_dict
 
@@ -29,6 +30,10 @@ def fy_quarter(d: date) -> str:
 
 # ---------------------------------------------------------------- sales invoices
 def _sales_save(o: SalesInvoice, data: dict, db: Session, user, created):
+    if created and not (o.number or "").strip():
+        o.number = next_invoice_number(db, o.date)[0]
+    if created:
+        _bump_counter(db, o.number)
     if o.status not in SALES_STATUSES:
         raise HTTPException(422, f"Статус: {', '.join(SALES_STATUSES)}")
     client = db.get(Client, o.client_id)
@@ -83,6 +88,45 @@ def _sales_ser(o: SalesInvoice, db: Session):
     return d
 
 
+
+
+# ---------------------------------------------------------------- invoice numbers: EBFI-<FY>-NNN, one queue for all clients
+INV_RE = re.compile(r"^EBFI-(\d{4})-(\d+)$")
+
+
+def fy_code(d: date) -> str:
+    start = d.year if d.month >= 4 else d.year - 1
+    return f"{start % 100:02d}{(start + 1) % 100:02d}"
+
+
+def next_invoice_number(db: Session, d: date | None = None) -> tuple[str, int]:
+    """Next number in the single queue 300, 301, 302…: after «Последний номер инвойса» in the settings, or after the
+    highest number in the register when that setting is empty (999 is treated as a placeholder, not a real number)."""
+    used = {int(m[2]) for (n,) in db.execute(select(SalesInvoice.number)) if (m := INV_RE.match(n or ""))}
+    last = get_setting(db, "sales_invoice_last")
+    seq = int(last) if str(last).strip().isdigit() else max((x for x in used if x != 999), default=0)
+    seq += 1
+    while seq in used:
+        seq += 1
+    return f"EBFI-{fy_code(d or date.today())}-{seq}", seq
+
+
+def _bump_counter(db: Session, number: str):
+    m = INV_RE.match(number or "")
+    if not m:
+        return
+    last = get_setting(db, "sales_invoice_last")
+    if not str(last).strip().isdigit() or int(m[2]) > int(last):
+        row = db.get(Setting, "sales_invoice_last") or Setting(key="sales_invoice_last", value="")
+        row.value = m[2]
+        db.add(row)
+
+
+@r.get("/sales-invoices/next-number")
+def sales_next_number(on: str | None = None, db: Session = Depends(get_db), _=Depends(need("read"))):
+    return {"number": next_invoice_number(db, date.fromisoformat(on) if on else None)[0]}
+
+
 r.include_router(make_crud(SalesInvoice, "/sales-invoices", order_by=[SalesInvoice.date.desc().nulls_last(), SalesInvoice.id.desc()],
                            search=["number", "notes"], serialize=_sales_ser, before_save=_sales_save, after_save=_sales_after))
 
@@ -106,10 +150,12 @@ def invoice_from_lines(data: dict, db: Session = Depends(get_db), user: User = D
     if len(clients) != 1 or len(currencies) != 1:
         raise HTTPException(422, "Все строки должны быть одного клиента и одной валюты")
     amount = sum(Decimal(l.quantity or 0) * Decimal(l.client_rate or 0) + Decimal(l.overtime_client or 0) for l in lines)
-    inv = SalesInvoice(number=data.get("number"), date=date.fromisoformat(data["date"]) if data.get("date") else date.today(),
+    inv_date = date.fromisoformat(data["date"]) if data.get("date") else date.today()
+    inv = SalesInvoice(number=(data.get("number") or "").strip() or next_invoice_number(db, inv_date)[0], date=inv_date,
                        client_id=clients.pop(), currency=currencies.pop(), amount=amount, status="Not Verified")
-    if not inv.number:
-        raise HTTPException(422, "Укажите номер инвойса")
+    if db.scalar(select(SalesInvoice).where(SalesInvoice.number == inv.number)):
+        raise HTTPException(409, f"Инвойс {inv.number} уже есть")
+    _bump_counter(db, inv.number)
     _sales_save(inv, {}, db, user, True)
     db.add(inv)
     db.flush()
@@ -150,14 +196,56 @@ def _ii_ser(o: InspectorInvoice, db: Session):
     d["job_ids"] = [j.id for j in o.jobs]
     d["job_numbers"] = [j.job_number for j in o.jobs]
     d["has_file"] = bool(o.file_path)
-    # expected amount from the job lines of this inspector, to catch mismatches
-    expected = Decimal(0)
-    for j in o.jobs:
-        for l in j.lines:
-            if l.inspector_id == o.inspector_id and not l.deleted and l.currency == o.currency:
-                expected += Decimal(l.quantity or 0) * Decimal(l.inspector_rate or 0) + Decimal(l.overtime_inspector or 0)
-    d["expected_amount"] = float(expected) if o.jobs else None
+    d.update(_check(o))
     return d
+
+
+def _insp_cost(l: JobLine) -> Decimal:
+    if l.no_subcontractor:
+        return Decimal(0)
+    return Decimal(l.quantity or 0) * Decimal(l.inspector_rate or 0) + Decimal(l.overtime_inspector or 0)
+
+
+def _check(o: InspectorInvoice) -> dict:
+    """Compare the invoice with the Табель: days × inspector rate (+ OT) of this inspector on the linked jobs,
+    in the inspector's own currency — the client may be billed in another currency, which is fine."""
+    rows = []
+    for j in o.jobs:
+        for l in sorted(j.lines, key=lambda x: x.month):
+            if l.deleted or l.inspector_id != o.inspector_id:
+                continue
+            rows.append({"job_id": j.id, "job_number": j.job_number, "month": l.month, "dates_text": l.dates_text,
+                         "quantity": float(l.quantity or 0), "unit": l.unit, "rate": float(l.inspector_rate or 0),
+                         "overtime": float(l.overtime_inspector or 0), "amount": float(_insp_cost(l)),
+                         "currency": l.inspector_currency or l.currency})
+    if not o.jobs:
+        return {"expected_amount": None, "check": {"status": "no_jobs", "rows": []}}
+    if not rows:
+        return {"expected_amount": None, "check": {"status": "no_lines", "rows": [],
+                "message": "В привязанных работах этот инспектор не указан"}}
+    by_cur: dict[str, float] = {}
+    for r in rows:
+        by_cur[r["currency"]] = by_cur.get(r["currency"], 0) + r["amount"]
+    expected = by_cur.get(o.currency)
+    problems = []
+    if expected is None:
+        status = "currency"
+        problems.append(f"Счёт в {o.currency}, а в Табеле ставка инспектора в {', '.join(by_cur)}")
+    else:
+        diff = round(float(o.amount) - expected, 2)
+        status = "ok" if abs(diff) <= 1 else "amount"
+        if status == "amount":
+            problems.append(f"Сумма счёта {float(o.amount):,.2f} {o.currency}, по Табелю {expected:,.2f} {o.currency} "
+                            f"(разница {diff:+,.2f})")
+        if status == "amount":  # explain where the difference comes from
+            days = sum(r["quantity"] for r in rows if r["unit"] == "day" and r["currency"] == o.currency)
+            if o.days and abs(float(o.days) - days) > 0.01:
+                problems.append(f"Дней: в счёте {float(o.days):g}, в Табеле {days:g}")
+            rates = {r["rate"] for r in rows if r["currency"] == o.currency}
+            if o.rate and rates and float(o.rate) not in rates:
+                problems.append(f"Ставка: в счёте {float(o.rate):g}, в Табеле {', '.join(f'{x:g}' for x in sorted(rates))}")
+    return {"expected_amount": expected, "check": {"status": status, "rows": rows, "problems": problems,
+                                                   "by_currency": by_cur}}
 
 
 def _ii_save(o: InspectorInvoice, data: dict, db: Session, user, created):
@@ -172,6 +260,41 @@ def _ii_save(o: InspectorInvoice, data: dict, db: Session, user, created):
 r.include_router(make_crud(InspectorInvoice, "/inspector-invoices",
                            order_by=[InspectorInvoice.invoice_date.desc().nulls_last(), InspectorInvoice.id.desc()],
                            search=["number", "comment"], serialize=_ii_ser, before_save=_ii_save, readonly={"file_path"}))
+
+
+@r.get("/inspectors/{iid}/work")
+def inspector_work(iid: int, invoice_id: int | None = None, db: Session = Depends(get_db), _=Depends(need("read"))):
+    """Jobs of this inspector from the Табель, with the amounts due to him; `invoiced` marks jobs already covered
+    by another of his invoices."""
+    taken: dict[int, str] = {}
+    for inv in db.scalars(select(InspectorInvoice).where(InspectorInvoice.inspector_id == iid, InspectorInvoice.deleted.is_(False))):
+        if inv.id != invoice_id:
+            for j in inv.jobs:
+                taken[j.id] = inv.number or f"#{inv.id}"
+    jobs: dict[int, dict] = {}
+    for l in db.scalars(select(JobLine).where(JobLine.inspector_id == iid, JobLine.deleted.is_(False)).order_by(JobLine.month)):
+        j = l.job
+        if j.deleted:
+            continue
+        cur = l.inspector_currency or l.currency
+        x = jobs.setdefault(j.id, {"job_id": j.id, "job_number": j.job_number, "client": j.client.name if j.client else None,
+                                   "status": j.status, "months": [], "dates": [], "days": 0.0, "amounts": {},
+                                   "rates": set(), "invoiced_in": taken.get(j.id)})
+        x["months"].append(l.month)
+        if l.dates_text:
+            x["dates"].append(l.dates_text)
+        if l.unit == "day":
+            x["days"] += float(l.quantity or 0)
+        x["amounts"][cur] = x["amounts"].get(cur, 0) + float(_insp_cost(l))
+        x["rates"].add(f"{float(l.inspector_rate or 0):g} {cur}")
+    out = []
+    for x in jobs.values():
+        x["rates"] = sorted(x["rates"])
+        x["dates"] = "; ".join(x["dates"])
+        out.append(x)
+    out.sort(key=lambda x: x["months"][-1], reverse=True)
+    out.sort(key=lambda x: x["invoiced_in"] is not None)
+    return out
 
 
 @r.post("/inspector-invoices/{iid}/file")

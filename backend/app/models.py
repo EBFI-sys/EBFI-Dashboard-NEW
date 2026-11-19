@@ -76,6 +76,7 @@ class Client(Base, TimestampMixin, SoftDelete):
     gstin: Mapped[str | None] = mapped_column(String(20))
     state: Mapped[str | None] = mapped_column(String(60))  # Indian state, for CGST+SGST vs IGST
     default_currency: Mapped[str] = mapped_column(String(3), default="USD")
+    job_code: Mapped[str | None] = mapped_column(String(4))  # KK in job number YY.KK-NNN; shared by e.g. all BV entities
     contact_name: Mapped[str | None] = mapped_column(String(120))
     contact_email: Mapped[str | None] = mapped_column(String(200))
     notes: Mapped[str | None] = mapped_column(Text)
@@ -134,6 +135,7 @@ class Request(Base, TimestampMixin, SoftDelete):
     inspector_rate: Mapped[Decimal | None] = mapped_column(Money)
     inspector_currency: Mapped[str | None] = mapped_column(String(3))
     inspector_id: Mapped[int | None] = mapped_column(ForeignKey("inspectors.id"))
+    inspector_ids: Mapped[list | None] = mapped_column(JSON)  # inspectors whose CVs were sent
     proposed_cvs: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), default="В процессе")
     cancel_reason: Mapped[str | None] = mapped_column(String(300))
@@ -164,6 +166,7 @@ class JobLine(Base, TimestampMixin, SoftDelete):
     id: Mapped[int] = mapped_column(primary_key=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
     month: Mapped[str] = mapped_column(String(7), index=True)
+    grp: Mapped[int] = mapped_column(Integer, default=1, server_default="1")  # lines of one inspector on the job, split by month
     inspector_id: Mapped[int | None] = mapped_column(ForeignKey("inspectors.id"))
     dates_text: Mapped[str | None] = mapped_column(String(300))
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
@@ -171,6 +174,7 @@ class JobLine(Base, TimestampMixin, SoftDelete):
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     client_rate: Mapped[Decimal] = mapped_column(Money, default=0)
     inspector_rate: Mapped[Decimal] = mapped_column(Money, default=0)
+    inspector_currency: Mapped[str | None] = mapped_column(String(3))  # None = same as the client currency
     overtime_client: Mapped[Decimal] = mapped_column(Money, default=0)
     overtime_inspector: Mapped[Decimal] = mapped_column(Money, default=0)
     no_subcontractor: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -179,6 +183,7 @@ class JobLine(Base, TimestampMixin, SoftDelete):
     sales_invoice_id: Mapped[int | None] = mapped_column(ForeignKey("sales_invoices.id"))
     # snapshot written when the month is closed; afterwards these are used instead of live settings
     snap_fx: Mapped[Decimal | None] = mapped_column(Rate)
+    snap_fx_insp: Mapped[Decimal | None] = mapped_column(Rate)
     snap_gst: Mapped[Decimal | None] = mapped_column(Rate)
     snap_tds: Mapped[Decimal | None] = mapped_column(Rate)
     snap_admin: Mapped[Decimal | None] = mapped_column(Rate)

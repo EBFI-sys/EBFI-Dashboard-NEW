@@ -7,6 +7,7 @@ import { CURRENCIES, REGIONS } from "../refs";
 
 const clientFields: Field[] = [
   { key: "name", label: "Клиент (юрлицо)", required: true, hint: "Каждое юрлицо — отдельный клиент: TÜV Rheinland Oman, Qatar и India не объединяются" },
+  { key: "job_code", label: "Код в Job number (КК)", hint: "26.19-478 → код 19. Номер новой работы присваивается по очереди этого кода" },
   { key: "legal_name", label: "Полное юр. название", wide: true },
   { key: "is_indian", label: "Клиент из Индии (GST и TDS)", type: "bool" },
   { key: "gstin", label: "GSTIN" },
@@ -49,7 +50,7 @@ const fxFields: Field[] = [
 ];
 
 const TABS = [
-  ["clients", "Клиенты"], ["inspectors", "Инспекторы"], ["vendors", "Заводы (Vendor)"], ["fx", "Курсы"], ["settings", "Ставки налогов"],
+  ["clients", "Клиенты"], ["inspectors", "Инспекторы"], ["vendors", "Заводы (Vendor)"], ["fx", "Курсы"], ["settings", "Налоги и нумерация"],
   ["pm", "Способы оплаты"], ["countries", "Страны"],
 ] as const;
 
@@ -76,10 +77,10 @@ function TaxSettings() {
   const [toast, setToast] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   if (!data) return <ErrorLine error={error} />;
-  const L: Record<string, string> = { gst_rate: "GST (доля, 0.18 = 18%)", tds_rate: "TDS (доля, 0.10 = 10%)", admin_rate: "Админка (доля от B, 0.18 = 18%)", company_state: "Штат EBFI Privat Limited" };
+  const L: Record<string, string> = { gst_rate: "GST (доля, 0.18 = 18%)", tds_rate: "TDS (доля, 0.10 = 10%)", admin_rate: "Админка (доля от B, 0.18 = 18%)", company_state: "Штат EBFI Privat Limited", sales_invoice_last: "Последний выданный номер инвойса клиенту (NNN)" };
   return (
     <section className="card narrow">
-      <h2>Ставки налогов</h2>
+      <h2>Ставки налогов и нумерация</h2>
       <p className="muted">Меняются только для открытых месяцев: в закрытых месяцах ставки зафиксированы.</p>
       <div className="form-grid">
         {Object.keys(L).map((k) => (

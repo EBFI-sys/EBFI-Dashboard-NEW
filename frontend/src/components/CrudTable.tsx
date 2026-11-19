@@ -5,7 +5,7 @@ import { useAuth } from "../auth";
 import { invalidateRef, loadRef, useRef_ } from "../refs";
 import { DatesField } from "./Calendar";
 import DataTable, { Col } from "./DataTable";
-import { ErrorLine, Modal, Pill, Toast, useAsync } from "./ui";
+import { ErrorLine, Modal, Pill, Portal, Toast, useAsync } from "./ui";
 
 export type Field = {
   key: string;
@@ -24,6 +24,7 @@ export type Field = {
   wide?: boolean;
   hint?: string;
   optional?: boolean; // column hidden until turned on in «Столбцы»
+  input?: (p: { value: any; onChange: (v: any) => void; row: any; patch: (d: Record<string, unknown>) => void }) => React.ReactNode;
 };
 
 type Props = {
@@ -90,7 +91,10 @@ function MultiRef({ f, value, onChange }: { f: Field; value: number[]; onChange:
   );
 }
 
-export function FieldInput({ f, value, onChange, row }: { f: Field; value: any; onChange: (v: any) => void; row?: any }) {
+export function FieldInput({ f, value, onChange, row, patch }: {
+  f: Field; value: any; onChange: (v: any) => void; row?: any; patch?: (d: Record<string, unknown>) => void;
+}) {
+  if (f.input) return <>{f.input({ value, onChange, row, patch: patch ?? (() => undefined) })}</>;
   switch (f.type) {
     case "suggest":
       return <SuggestInput f={f} value={value} onChange={onChange} />;
@@ -181,8 +185,13 @@ export function cell(f: Field, row: any): React.ReactNode {
   }
 }
 
-export function EditForm({ fields, initial, onSave, onCancel, title }: {
+function Wrap({ as, children, ...rest }: { as: "div" | "label"; children: React.ReactNode; className?: string }) {
+  return as === "div" ? <div {...rest}>{children}</div> : <label {...rest}>{children}</label>;
+}
+
+export function EditForm({ fields, initial, onSave, onCancel, title, onFieldChange }: {
   fields: Field[]; initial: any; onSave: (d: any) => Promise<void>; onCancel: () => void; title: string;
+  onFieldChange?: (key: string, value: any, data: any) => Promise<Record<string, unknown> | void> | Record<string, unknown> | void;
 }) {
   const [data, setData] = useState<any>({ ...initial });
   const [err, setErr] = useState<string | null>(null);
@@ -208,11 +217,16 @@ export function EditForm({ fields, initial, onSave, onCancel, title }: {
     <Modal title={title} onClose={onCancel} wide={fields.filter((f) => f.form !== false).length > 8}>
       <form onSubmit={submit} className="form-grid">
         {fields.filter((f) => f.form !== false).map((f) => (
-          <label key={f.key} className={"field" + (f.wide || f.type === "textarea" || f.type === "multiref" || f.type === "dates" ? " wide" : "") + (f.type === "bool" ? " inline" : "")}>
+          <Wrap key={f.key} as={f.input || f.type === "multiref" ? "div" : "label"} className={"field" + (f.wide || f.type === "textarea" || f.type === "multiref" || f.type === "dates" ? " wide" : "") + (f.type === "bool" ? " inline" : "")}>
             <span>{f.label}{f.required && " *"}</span>
-            <FieldInput f={f} value={data[f.key]} row={data} onChange={(v) => setData((d: any) => ({ ...d, [f.key]: v }))} />
+            <FieldInput f={f} value={data[f.key]} row={data} patch={(x) => setData((d: any) => ({ ...d, ...x }))}
+              onChange={async (v) => {
+                setData((d: any) => ({ ...d, [f.key]: v }));
+                const extra = await onFieldChange?.(f.key, v, { ...data, [f.key]: v });
+                if (extra) setData((d: any) => ({ ...d, ...extra }));
+              }} />
             {f.hint && <small>{f.hint}</small>}
-          </label>
+          </Wrap>
         ))}
         <ErrorLine error={err} />
         <div className="form-actions wide">
@@ -351,7 +365,7 @@ export default function CrudTable(p: Props) {
 function DeleteBar({ onDelete }: { onDelete: () => Promise<void> }) {
   const [sure, setSure] = useState(false);
   return (
-    <div className="delete-bar">
+    <Portal><div className="delete-bar">
       {sure ? (
         <>
           <span>Запись будет скрыта (останется в журнале).</span>
@@ -361,6 +375,6 @@ function DeleteBar({ onDelete }: { onDelete: () => Promise<void> }) {
       ) : (
         <button className="btn ghost small" onClick={() => setSure(true)}>Удалить запись</button>
       )}
-    </div>
+    </div></Portal>
   );
 }

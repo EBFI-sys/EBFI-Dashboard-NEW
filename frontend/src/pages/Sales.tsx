@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, inr, money, monthLabel, thisMonth } from "../api";
 import CrudTable, { Field } from "../components/CrudTable";
 import { ErrorLine, Modal, useAsync } from "../components/ui";
@@ -7,7 +7,7 @@ import { CURRENCIES, useRef_ } from "../refs";
 export const SALES_STATUSES = ["Not Verified", "Отправлен клиенту", "Paid"];
 
 const fields: Field[] = [
-  { key: "number", label: "Номер", required: true, hint: "EBFI-2627-NNN" },
+  { key: "number", label: "Номер", hint: "Присваивается автоматически по порядку (300, 301, 302…). Пусто — следующий свободный" },
   { key: "date", label: "Дата", type: "date", required: true },
   { key: "client_id", label: "Клиент", type: "ref", ref: "clients", required: true },
   { key: "currency", label: "Валюта", type: "select", options: CURRENCIES, required: true },
@@ -23,13 +23,14 @@ const fields: Field[] = [
 
 export default function Sales() {
   const [fromLines, setFromLines] = useState<null | (() => void)>(null);
+  const next = useAsync(() => api.get("/sales-invoices/next-number"), [fromLines]);
   return (
     <div className="page">
       <header className="page-head"><div><h1>Инвойсы клиентам</h1>
         <p className="lede">GST считается автоматически для клиентов из Индии: CGST + SGST в своём штате, IGST — в другом. Для каждого такого инвойса создаётся запись в реестре TDS.</p></div></header>
       <CrudTable periodKey="date" endpoint="/sales-invoices" title="Реестр инвойсов" fields={fields} csvName="sales-invoices.csv"
-        defaults={{ status: "Not Verified", date: new Date().toISOString().slice(0, 10), currency: "USD" }}
-        toolbar={(_, reload) => <button className="btn" onClick={() => setFromLines(() => reload)}>Инвойс из строк работ</button>} />
+        defaults={{ status: "Not Verified", date: new Date().toISOString().slice(0, 10), currency: "USD", number: next.data?.number }}
+        toolbar={(_, reload) => <button className="btn" onClick={() => setFromLines(() => () => { reload(); next.reload(); })}>Инвойс из работ</button>} />
       {fromLines && <FromLines onClose={() => setFromLines(null)} onDone={fromLines} />}
     </div>
   );
@@ -39,14 +40,21 @@ function FromLines({ onClose, onDone }: { onClose: () => void; onDone: () => voi
   const clients = useRef_("clients");
   const [month, setMonth] = useState(thisMonth());
   const [clientId, setClientId] = useState("");
+  const [cur, setCur] = useState("");
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [number, setNumber] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [err, setErr] = useState<string | null>(null);
   const { data } = useAsync(() => api.get<any[]>(`/lines?month=${month}`), [month]);
   const client = clients.find((c) => String(c.id) === clientId);
-  const lines = useMemo(() => (data ?? []).filter((l) => !l.sales_invoice_id && (!client || l.client_name === client.name)), [data, client]);
+  const all = useMemo(() => (data ?? []).filter((l) => !l.sales_invoice_id && (!client || l.client_name === client.name)), [data, client]);
+  const curs = [...new Set(all.map((l) => l.currency))].sort();
+  const lines = all.filter((l) => !cur || l.currency === cur);
+  useEffect(() => {
+    api.get(`/sales-invoices/next-number?on=${date}`).then((r) => setNumber((n) => (n && !n.startsWith("EBFI-") ? n : r.number))).catch(() => undefined);
+  }, [date]);
   const chosen = lines.filter((l) => sel.has(l.id));
+  const mixed = new Set(chosen.map((l) => l.currency)).size > 1;
   const total = chosen.reduce((a, l) => a + l.calc.amount_currency, 0);
 
   const create = async () => {
@@ -60,12 +68,17 @@ function FromLines({ onClose, onDone }: { onClose: () => void; onDone: () => voi
   };
 
   return (
-    <Modal title="Инвойс из строк работ" onClose={onClose} wide>
+    <Modal title="Инвойс из работ" onClose={onClose} wide>
       <div className="form-grid">
         <label className="field"><span>Месяц</span><input type="month" value={month} onChange={(e) => setMonth(e.target.value)} /></label>
         <label className="field"><span>Клиент</span>
           <select value={clientId} onChange={(e) => { setClientId(e.target.value); setSel(new Set()); }}>
             <option value="">—</option>{clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+        <label className="field"><span>Валюта работы</span>
+          <select value={cur} onChange={(e) => { setCur(e.target.value); setSel(new Set()); }}>
+            <option value="">Все валюты</option>{(curs.length ? curs : ["USD", "EUR", "GBP", "INR"]).map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </label>
         <div className="wide table-wrap tall">
@@ -79,17 +92,19 @@ function FromLines({ onClose, onDone }: { onClose: () => void; onDone: () => voi
                   <td className="r">{money(l.calc.amount_currency, l.currency)}</td>
                 </tr>
               ))}
-              {lines.length === 0 && <tr><td colSpan={6} className="empty">Нет строк без инвойса за {monthLabel(month)}.</td></tr>}
+              {lines.length === 0 && <tr><td colSpan={6} className="empty">Нет работ без инвойса за {monthLabel(month)}.</td></tr>}
             </tbody>
           </table>
         </div>
-        <label className="field"><span>Номер инвойса</span><input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="EBFI-2627-300" /></label>
+        <label className="field"><span>Номер инвойса</span><input className="mono" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="EBFI-2627-300" />
+          <small>Следующий по порядку; можно изменить</small></label>
         <label className="field"><span>Дата</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
         <p className="wide">Выбрано строк: <b>{chosen.length}</b>, сумма: <b>{chosen[0] ? money(total, chosen[0].currency) : "—"}</b></p>
         <ErrorLine error={err} />
         <div className="form-actions wide">
           <button className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={!chosen.length || !number} onClick={create}>Создать инвойс</button>
+          {mixed && <span className="dirty-note">Выбраны работы в разных валютах — выберите одну валюту</span>}
+          <button className="btn primary" disabled={!chosen.length || !number || mixed} onClick={create}>Создать инвойс</button>
         </div>
       </div>
     </Modal>

@@ -20,10 +20,11 @@ from decimal import Decimal
 import openpyxl
 from sqlalchemy import delete, select
 
+from app.migrate import upgrade
 from app.db import Base, SessionLocal, engine
 from app.directory import clean_country, clean_vendor, same_vendor, vendor_key
 from app.models import (AuditLog, Client, Country, FxRate, Inspector, InspectorInvoice, Job, JobLine, MonthClose,
-                        PaymentMethod, Request, SalesInvoice, TdsEntry, User, Vendor, inspector_invoice_jobs)
+                        PaymentMethod, Request, SalesInvoice, Setting, TdsEntry, User, Vendor, inspector_invoice_jobs)
 from app.routers.dashboard import region_of
 from app.routers.money import _sales_after
 from scripts.names import canonical_groups, same_person, tokens
@@ -128,6 +129,7 @@ class Importer:
         self.users = {u.initials: u for u in db.scalars(select(User))}
         self.methods = {m.name: m for m in db.scalars(select(PaymentMethod))}
         self.jobs: dict[str, Job] = {}
+        self.grps: dict[str, dict] = {}  # job number -> {inspector id: assignment group}
         self.vendor_name: dict[str, str] = {}  # vendor_key -> canonical name
         self.stats = Counter()
 
@@ -138,9 +140,21 @@ class Importer:
         vendors: dict[str, Counter] = defaultdict(Counter)
         vendor_country: dict[str, Counter] = defaultdict(Counter)
         country_names = Counter()
+        self.codes: dict[str, Counter] = defaultdict(Counter)  # client -> KK codes seen in its job numbers
+        self.seq: dict[str, int] = {}  # KK -> highest NNN in the whole history
         if pnl:
             for m, g in pnl_rows(pnl):
                 client_names[client_name(g("client"))] += 1
+                jm = re.match(r"^(\d{2})\.(\d{2})-(\d{1,4})$", job_no(g("job")))
+                if jm:
+                    self.codes[client_name(g("client"))][jm[2]] += 1
+            # every job number anywhere in the old Табель, including rows without amounts: the queue continues after them
+            for ws in openpyxl.load_workbook(pnl, data_only=True, read_only=True).worksheets:
+                for row in ws.iter_rows(values_only=True):
+                    for v in row:
+                        jm = re.match(r"^(\d{2})\.(\d{2})-(\d{1,4})$", job_no(v)) if isinstance(v, str) else None
+                        if jm:
+                            self.seq[jm[2]] = max(self.seq.get(jm[2], 0), int(jm[3]))
                 cn = clean_country(g("country"))
                 if cn:
                     country_names[cn] += 1
@@ -217,6 +231,15 @@ class Importer:
             self.db.add(c)
             self.clients[n] = c
         self._client_key = seen
+        for n, cnt in self.codes.items():  # the client's KK code: the one it used most often
+            canon = seen.get(re.sub(r"[\s._-]+", "", n.lower()))
+            if canon in self.clients and not self.clients[canon].job_code:
+                self.clients[canon].job_code = cnt.most_common(1)[0][0]
+        for code, last in self.seq.items():
+            row = self.db.get(Setting, f"jobseq:{code}") or Setting(key=f"jobseq:{code}", value="0")
+            row.value = str(max(last, int(row.value) if row.value.isdigit() else 0))
+            self.db.add(row)
+        self.stats["client_job_codes"] = sum(1 for c in self.clients.values() if c.job_code)
         self.db.flush()
         self.stats["clients"] = len(self.clients)
 
@@ -323,7 +346,9 @@ class Importer:
                 unit = "hour" if client.name == "Qualcon" else "ton"
             insp, note = self.inspector(norm(g("inspector")))
             dates = g("dates")
-            line = JobLine(job_id=job.id, month=m, inspector_id=insp.id if insp else None,
+            g_of = self.grps.setdefault(jn, {})
+            grp = g_of.setdefault(insp.id if insp else None, len(g_of) + 1)
+            line = JobLine(job_id=job.id, month=m, grp=grp, inspector_id=insp.id if insp else None,
                            dates_text=(dates.strftime("%d.%m.%Y") if isinstance(dates, dt.datetime) else norm(dates))[:300] or None,
                            quantity=num(g("qty")), unit=unit, currency=cur, client_rate=rate, inspector_rate=cost,
                            overtime_client=num(g("ot_client")), overtime_inspector=num(g("ot_insp")),
@@ -379,9 +404,10 @@ class Importer:
             notes = "\n".join(x for x in [norm(q["notes"])[:2000], note or ""] if x) or None
             self.db.add(Request(received_date=q["date"], type=t, client_id=client.id if client else None,
                                 country=country or None,
-                                factory=norm(q["factory"])[:300] or None, dates_text=norm(q["dates"])[:200] or None,
+                                factory=norm(q["factory"])[:300] or None, dates_text=(q["dates"].strftime("%d.%m.%Y") if isinstance(q["dates"], dt.datetime) else norm(q["dates"]))[:200] or None,
                                 client_rate=cr, client_currency=cc, inspector_rate=ir, inspector_currency=ic,
-                                inspector_id=insp.id if insp else None, status=q["status"],
+                                inspector_id=insp.id if insp else None, inspector_ids=[insp.id] if insp else None,
+                                status=q["status"],
                                 cancel_reason="перенос из Google Таблиц" if q["status"] == "Перенос" else None, notes=notes))
             self.stats["requests"] += 1
 
@@ -445,7 +471,7 @@ class Importer:
             no = no[:-2] if no.endswith(".0") else no
             m = self.methods.get(method_of(norm(d.get("Payment method"))))
             inv = InspectorInvoice(number=no or None, inspector_id=insp.id, invoice_date=idate,
-                                   dates_text=norm(d.get("Dates"))[:300] or None, days=num(d.get("Days")) or None,
+                                   dates_text=(d["Dates"].strftime("%d.%m.%Y") if isinstance(d.get("Dates"), dt.datetime) else norm(d.get("Dates")))[:300] or None, days=num(d.get("Days")) or None,
                                    rate=num(d.get("MD rate")) or None, amount=amount,
                                    currency=cur.get(norm(d.get("currency")), norm(d.get("currency")) or "USD"),
                                    payment_method_id=m.id if m else None, paid=d.get("Status of payment") is True,
@@ -462,6 +488,7 @@ def reset(db):
     for model in (TdsEntry, InspectorInvoice, JobLine, Request, SalesInvoice, Job, FxRate, MonthClose, Inspector, Client,
                   Vendor, Country, AuditLog):
         db.execute(delete(model))
+    db.execute(delete(Setting).where(Setting.key.like("jobseq:%")))
     db.commit()
 
 
@@ -476,6 +503,7 @@ def main():
     ap.add_argument("--reset", action="store_true")
     a = ap.parse_args()
     Base.metadata.create_all(engine)
+    upgrade(engine)
     with SessionLocal() as db:
         if not db.scalar(select(User).where(User.initials == "MB")):
             raise SystemExit("Сначала создайте пользователей: python -m scripts.create_admin")
