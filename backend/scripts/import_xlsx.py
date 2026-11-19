@@ -18,7 +18,7 @@ from collections import Counter, defaultdict
 from decimal import Decimal
 
 import openpyxl
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from app.migrate import upgrade
 from app.db import Base, SessionLocal, engine
@@ -133,6 +133,26 @@ class Importer:
         self.vendor_name: dict[str, str] = {}  # vendor_key -> canonical name
         self.stats = Counter()
 
+    def _existing(self, model, name: str):
+        return self.db.scalar(select(model).where((model.name == name) | (func.lower(model.name) == name.lower())).limit(1))
+
+    def relink_inspectors(self):
+        """Lines and requests whose inspector was not found earlier keep the name in a note «Инспектор: …»: link them now."""
+        n = 0
+        for obj in [*self.db.scalars(select(JobLine).where(JobLine.inspector_id.is_(None))),
+                    *self.db.scalars(select(Request).where(Request.inspector_id.is_(None)))]:
+            m = re.search(r"Инспектор: ([^\n]+)", obj.notes or "")
+            if not m:
+                continue
+            insp, _ = self.inspector(m[1].strip())
+            if insp:
+                obj.inspector_id = insp.id
+                if isinstance(obj, Request):
+                    obj.inspector_ids = [insp.id]
+                obj.notes = re.sub(r"\n?Инспектор: [^\n]+", "", obj.notes).strip() or None
+                n += 1
+        self.stats["inspectors_relinked"] = n
+
     # ------------------------------------------------------------ reference lists from the whole history
     def build_references(self, pnl: str | None, requests: str | None, sales: str | None, invoices: str | None):
         names, countries, rates, methods = Counter(), defaultdict(Counter), {}, defaultdict(Counter)
@@ -148,14 +168,6 @@ class Importer:
                 jm = re.match(r"^(\d{2})\.(\d{2})-(\d{1,4})$", job_no(g("job")))
                 if jm:
                     self.codes[client_name(g("client"))][jm[2]] += 1
-            # every job number anywhere in the old Табель, including rows without amounts: the queue continues after them
-            for ws in openpyxl.load_workbook(pnl, data_only=True, read_only=True).worksheets:
-                for row in ws.iter_rows(values_only=True):
-                    for v in row:
-                        jm = re.match(r"^(\d{2})\.(\d{2})-(\d{1,4})$", job_no(v)) if isinstance(v, str) else None
-                        if jm:
-                            k = f"{jm[1]}:{jm[2]}"  # year and client code: the queue restarts every year
-                            self.seq[k] = max(self.seq.get(k, 0), int(jm[3]))
                 cn = clean_country(g("country"))
                 if cn:
                     country_names[cn] += 1
@@ -170,6 +182,14 @@ class Importer:
                     countries[p][COUNTRY_FIX.get(norm(g("country")), norm(g("country")))] += 1
                 if len(people) == 1 and num(g("cost")) >= 50:
                     rates[people[0]] = (m, num(g("cost")), {1: "USD", 2: "EUR"}.get(int(num(g("cur")) or 0), "USD"))
+            # every job number anywhere in the old Табель, including rows without amounts: the queue continues after them
+            for ws in openpyxl.load_workbook(pnl, data_only=True, read_only=True).worksheets:
+                for row in ws.iter_rows(values_only=True):
+                    for v in row:
+                        jm = re.match(r"^(\d{2})\.(\d{2})-(\d{1,4})$", job_no(v)) if isinstance(v, str) else None
+                        if jm:
+                            k = f"{jm[1]}:{jm[2]}"  # year and client code: the queue restarts every year
+                            self.seq[k] = max(self.seq.get(k, 0), int(jm[3]))
         if invoices:
             ws = openpyxl.load_workbook(invoices, data_only=True).worksheets[0]
             rows = ws.iter_rows(values_only=True)
@@ -211,11 +231,15 @@ class Importer:
             for v in variants:
                 mc.update(methods[v])
             others = sorted(v for v in variants if v != canon)
-            insp = Inspector(name=canon, country=(c.most_common(1)[0][0] or None) if c else None,
-                             rate=rate[1] if rate else None, currency=rate[2] if rate else None,
-                             payment_method_id=self.methods[mc.most_common(1)[0][0]].id if mc else None,
-                             notes=("Варианты написания: " + "; ".join(others)) if others else None)
-            self.db.add(insp)
+            insp = self._existing(Inspector, canon)
+            if insp:  # already in the directory: keep what the team entered there
+                self.stats["inspectors_already_there"] += 1
+            else:
+                insp = Inspector(name=canon, country=(c.most_common(1)[0][0] or None) if c else None,
+                                 rate=rate[1] if rate else None, currency=rate[2] if rate else None,
+                                 payment_method_id=self.methods[mc.most_common(1)[0][0]].id if mc else None,
+                                 notes=("Варианты написания: " + "; ".join(others)) if others else None)
+                self.db.add(insp)
             self.inspectors[canon] = insp
         self.db.flush()
         self.stats["inspectors"] = len(self.inspectors)
@@ -228,8 +252,10 @@ class Importer:
             if not n or key in seen or "/" in n:  # "BV / NORD" is a typo in the request log
                 continue
             seen[key] = n
-            c = Client(name=n, default_currency="USD")
-            self.db.add(c)
+            c = self._existing(Client, n)
+            if not c:
+                c = Client(name=n, default_currency="USD")
+                self.db.add(c)
             self.clients[n] = c
         self._client_key = seen
         for n, cnt in self.codes.items():  # the client's KK code: the one it used most often
@@ -266,12 +292,14 @@ class Importer:
                 vc.update(country_of[x])
                 self.vendor_name[x] = canon
             others = sorted(x for x in g if x != canon)
-            self.db.add(Vendor(name=canon, country=vc.most_common(1)[0][0] if vc else None,
-                               notes=("Варианты написания: " + "; ".join(others))[:2000] if others else None))
+            if not self._existing(Vendor, canon):
+                self.db.add(Vendor(name=canon, country=vc.most_common(1)[0][0] if vc else None,
+                                   notes=("Варианты написания: " + "; ".join(others))[:2000] if others else None))
         self.stats["vendors"] = len(groups)
         self.stats["vendor_spellings_merged"] = len(spell) - len(groups)
         for cn in sorted(country_names):
-            self.db.add(Country(name=cn, region=region_of(cn, {})))
+            if not self._existing(Country, cn):
+                self.db.add(Country(name=cn, region=region_of(cn, {})))
         self.stats["countries"] = len(country_names)
         self.db.flush()
 
@@ -502,12 +530,27 @@ def main():
     ap.add_argument("--months", default="2026-10,2026-11")
     ap.add_argument("--month", help="устаревший параметр, игнорируется")
     ap.add_argument("--reset", action="store_true")
+    ap.add_argument("--refs-only", action="store_true",
+                    help="только дополнить справочники (инспекторы, заводы, страны, клиенты) из всей истории, данные не трогать")
     a = ap.parse_args()
     Base.metadata.create_all(engine)
     upgrade(engine)
     with SessionLocal() as db:
         if not db.scalar(select(User).where(User.initials == "MB")):
             raise SystemExit("Сначала создайте пользователей: python -m scripts.create_admin")
+        if a.refs_only:
+            count = lambda: {m.__tablename__: db.scalar(select(func.count()).select_from(m)) for m in (Inspector, Vendor, Country, Client)}
+            before = count()
+            imp = Importer(db, set())
+            imp.build_references(a.pnl, a.requests, a.sales, a.invoices)
+            imp.relink_inspectors()
+            db.commit()
+            after = count()
+            names = {"inspectors": "инспекторов", "vendors": "заводов", "countries": "стран", "clients": "клиентов"}
+            for k in before:
+                print(f"{names[k]:12s} было {before[k]:4d}  стало {after[k]:4d}  (+{after[k] - before[k]})")
+            print(f"{'строк и заявок, где восстановлен инспектор':44s} {imp.stats['inspectors_relinked']}")
+            return
         if a.reset:
             reset(db)
         elif db.scalar(select(Job).limit(1)):
