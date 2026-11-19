@@ -39,7 +39,8 @@ class User(Base, TimestampMixin):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     failed_logins: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
-    legacy_letters: Mapped[str | None] = mapped_column(String(20))  # old Cyrillic letters, e.g. "Л"
+    legacy_letters: Mapped[str | None] = mapped_column(String(20))
+    color: Mapped[str | None] = mapped_column(String(9))  # «Чья» label colour, #rrggbb  # old Cyrillic letters, e.g. "Л"
 
 
 # ---------------------------------------------------------------- references
@@ -76,7 +77,8 @@ class Client(Base, TimestampMixin, SoftDelete):
     gstin: Mapped[str | None] = mapped_column(String(20))
     state: Mapped[str | None] = mapped_column(String(60))  # Indian state, for CGST+SGST vs IGST
     default_currency: Mapped[str] = mapped_column(String(3), default="USD")
-    job_code: Mapped[str | None] = mapped_column(String(4))  # KK in job number YY.KK-NNN; shared by e.g. all BV entities
+    job_code: Mapped[str | None] = mapped_column(String(4))
+    color: Mapped[str | None] = mapped_column(String(9))  # label colour in the Табель, #rrggbb  # KK in job number YY.KK-NNN; shared by e.g. all BV entities
     contact_name: Mapped[str | None] = mapped_column(String(120))
     contact_email: Mapped[str | None] = mapped_column(String(200))
     notes: Mapped[str | None] = mapped_column(Text)

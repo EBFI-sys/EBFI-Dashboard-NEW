@@ -141,7 +141,7 @@ class Importer:
         vendor_country: dict[str, Counter] = defaultdict(Counter)
         country_names = Counter()
         self.codes: dict[str, Counter] = defaultdict(Counter)  # client -> KK codes seen in its job numbers
-        self.seq: dict[str, int] = {}  # KK -> highest NNN in the whole history
+        self.seq: dict[str, int] = {}  # "YY:KK" -> highest NNN in the history
         if pnl:
             for m, g in pnl_rows(pnl):
                 client_names[client_name(g("client"))] += 1
@@ -154,7 +154,8 @@ class Importer:
                     for v in row:
                         jm = re.match(r"^(\d{2})\.(\d{2})-(\d{1,4})$", job_no(v)) if isinstance(v, str) else None
                         if jm:
-                            self.seq[jm[2]] = max(self.seq.get(jm[2], 0), int(jm[3]))
+                            k = f"{jm[1]}:{jm[2]}"  # year and client code: the queue restarts every year
+                            self.seq[k] = max(self.seq.get(k, 0), int(jm[3]))
                 cn = clean_country(g("country"))
                 if cn:
                     country_names[cn] += 1

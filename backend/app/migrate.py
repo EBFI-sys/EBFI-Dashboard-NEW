@@ -3,6 +3,8 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 STEPS = [
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS color VARCHAR(9)",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS color VARCHAR(9)",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS job_code VARCHAR(4)",
     "ALTER TABLE requests ADD COLUMN IF NOT EXISTS inspector_ids JSON",
     "ALTER TABLE job_lines ADD COLUMN IF NOT EXISTS grp INTEGER",

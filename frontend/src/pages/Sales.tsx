@@ -7,7 +7,7 @@ import { CURRENCIES, useRef_ } from "../refs";
 export const SALES_STATUSES = ["Not Verified", "Отправлен клиенту", "Paid"];
 
 const fields: Field[] = [
-  { key: "number", label: "Номер", hint: "Присваивается автоматически по порядку (300, 301, 302…). Пусто — следующий свободный" },
+  { key: "number", label: "Номер", required: true, hint: "EBFI-2627-NNN. Когда включена автонумерация, подставляется следующий по порядку" },
   { key: "date", label: "Дата", type: "date", required: true },
   { key: "client_id", label: "Клиент", type: "ref", ref: "clients", required: true },
   { key: "currency", label: "Валюта", type: "select", options: CURRENCIES, required: true },
@@ -51,7 +51,7 @@ function FromLines({ onClose, onDone }: { onClose: () => void; onDone: () => voi
   const curs = [...new Set(all.map((l) => l.currency))].sort();
   const lines = all.filter((l) => !cur || l.currency === cur);
   useEffect(() => {
-    api.get(`/sales-invoices/next-number?on=${date}`).then((r) => setNumber((n) => (n && !n.startsWith("EBFI-") ? n : r.number))).catch(() => undefined);
+    api.get(`/sales-invoices/next-number?on=${date}`).then((r) => r.number && setNumber((n) => (n && !n.startsWith("EBFI-") ? n : r.number))).catch(() => undefined);
   }, [date]);
   const chosen = lines.filter((l) => sel.has(l.id));
   const mixed = new Set(chosen.map((l) => l.currency)).size > 1;
@@ -97,7 +97,7 @@ function FromLines({ onClose, onDone }: { onClose: () => void; onDone: () => voi
           </table>
         </div>
         <label className="field"><span>Номер инвойса</span><input className="mono" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="EBFI-2627-300" />
-          <small>Следующий по порядку; можно изменить</small></label>
+          <small>{number ? "Следующий по порядку; можно изменить" : "Автонумерация не включена — введите номер"}</small></label>
         <label className="field"><span>Дата</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>
         <p className="wide">Выбрано строк: <b>{chosen.length}</b>, сумма: <b>{chosen[0] ? money(total, chosen[0].currency) : "—"}</b></p>
         <ErrorLine error={err} />

@@ -86,17 +86,18 @@ def create_job_from_request(rid: int, data: dict, db: Session = Depends(get_db),
 NUM_RE = re.compile(r"^(\d{2})\.(\d{2})-(\d{1,4})$")
 
 
-def last_seq(db: Session, code: str) -> int:
-    """Highest NNN used with this client code: in the Табель and in the imported history (setting jobseq:KK)."""
-    best = 0
-    for (n,) in db.execute(select(Job.job_number).where(Job.job_number.like(f"__.{code}-%"))):
+def last_seq(db: Session, yy: str, code: str) -> tuple[int, int]:
+    """Highest NNN used this year with this client code (the queue restarts at 001 every January),
+    from the Табель and from the imported history (setting jobseq:YY:KK). Returns (number, digits)."""
+    best, width = 0, 3
+    for (n,) in db.execute(select(Job.job_number).where(Job.job_number.like(f"{yy}.{code}-%"))):
         m = NUM_RE.match(n or "")
-        if m:
-            best = max(best, int(m[3]))
-    hist = db.get(Setting, f"jobseq:{code}")
-    if hist and hist.value.isdigit():
-        best = max(best, int(hist.value))
-    return best
+        if m and int(m[3]) >= best:
+            best, width = int(m[3]), len(m[3])
+    hist = db.get(Setting, f"jobseq:{yy}:{code}")
+    if hist and hist.value.isdigit() and int(hist.value) > best:
+        best, width = int(hist.value), max(2, len(hist.value))
+    return best, (width if best else 3)
 
 
 def next_job_number(db: Session, client_id: int) -> str:
@@ -104,8 +105,9 @@ def next_job_number(db: Session, client_id: int) -> str:
     if not client or not client.job_code:
         raise HTTPException(422, f"У клиента {client.name if client else ''} не указан код в номере работы (КК). "
                                  "Укажите его в «Справочники → Клиенты» или введите Job number вручную.")
-    code = client.job_code.zfill(2)
-    return f"{dt.date.today():%y}.{code}-{last_seq(db, code) + 1:02d}"
+    code, yy = client.job_code.zfill(2), f"{dt.date.today():%y}"
+    seq, width = last_seq(db, yy, code)
+    return f"{yy}.{code}-{seq + 1:0{width}d}"
 
 
 @r.get("/jobs/next-number")

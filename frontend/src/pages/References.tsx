@@ -1,3 +1,4 @@
+import { ClientChip, ColorInput, defaultClientColor } from "../components/Chips";
 import { useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -7,6 +8,9 @@ import { CURRENCIES, REGIONS } from "../refs";
 
 const clientFields: Field[] = [
   { key: "name", label: "Клиент (юрлицо)", required: true, hint: "Каждое юрлицо — отдельный клиент: TÜV Rheinland Oman, Qatar и India не объединяются" },
+  { key: "color", label: "Цвет метки", wide: true, text: (r) => r.color,
+    render: (r) => <ClientChip name={r.name} color={r.color} />,
+    input: ({ value, onChange, row }) => <ColorInput value={value} onChange={onChange} fallback={defaultClientColor(row.name ?? "")} /> },
   { key: "job_code", label: "Код в Job number (КК)", hint: "26.19-478 → код 19. Номер новой работы присваивается по очереди этого кода" },
   { key: "legal_name", label: "Полное юр. название", wide: true },
   { key: "is_indian", label: "Клиент из Индии (GST и TDS)", type: "bool" },
@@ -77,7 +81,7 @@ function TaxSettings() {
   const [toast, setToast] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   if (!data) return <ErrorLine error={error} />;
-  const L: Record<string, string> = { gst_rate: "GST (доля, 0.18 = 18%)", tds_rate: "TDS (доля, 0.10 = 10%)", admin_rate: "Админка (доля от B, 0.18 = 18%)", company_state: "Штат EBFI Privat Limited", sales_invoice_last: "Последний выданный номер инвойса клиенту (NNN)" };
+  const L: Record<string, string> = { gst_rate: "GST (доля, 0.18 = 18%)", tds_rate: "TDS (доля, 0.10 = 10%)", admin_rate: "Админка (доля от B, 0.18 = 18%)", company_state: "Штат EBFI Privat Limited", sales_invoice_last: "Автонумерация инвойсов: последний выданный номер (NNN). Пусто — номера вводятся вручную" };
   return (
     <section className="card narrow">
       <h2>Ставки налогов и нумерация</h2>

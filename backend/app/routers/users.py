@@ -1,3 +1,4 @@
+import re
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,6 +28,7 @@ class UserIn(BaseModel):
     initials: str
     role: str = "manager"
     legacy_letters: str | None = None
+    color: str | None = None
 
 
 def _temp_password() -> str:
@@ -39,7 +41,7 @@ def create_user(data: UserIn, db: Session = Depends(get_db), _=Depends(need("use
         raise HTTPException(422, "Неизвестная роль")
     pw = _temp_password()
     u = User(name=data.name, email=data.email.strip().lower(), initials=data.initials.strip().upper(),
-             role=data.role, legacy_letters=data.legacy_letters, password_hash=hash_password(pw))
+             role=data.role, legacy_letters=data.legacy_letters, color=data.color or None, password_hash=hash_password(pw))
     db.add(u)
     db.commit()
     return {**to_dict(u, HIDE), "temp_password": pw}
@@ -50,7 +52,9 @@ def update_user(uid: int, data: dict, db: Session = Depends(get_db), _=Depends(n
     u = db.get(User, uid)
     if not u:
         raise HTTPException(404, "Не найдено")
-    for k in ("name", "email", "initials", "role", "active", "legacy_letters"):
+    if "color" in data and data["color"] and not re.match(r"^#[0-9a-fA-F]{6}$", data["color"]):
+        raise HTTPException(422, "Цвет в формате #rrggbb")
+    for k in ("name", "email", "initials", "role", "active", "legacy_letters", "color"):
         if k in data:
             if k == "role" and data[k] not in ROLES:
                 raise HTTPException(422, "Неизвестная роль")

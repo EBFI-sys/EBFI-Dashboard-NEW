@@ -1,3 +1,4 @@
+import { ColorInput, OwnerChip, defaultOwnerColor } from "../components/Chips";
 import { useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -12,6 +13,8 @@ const fields: Field[] = [
   { key: "initials", label: "Инициалы («Чья»)", required: true },
   { key: "role", label: "Роль", type: "select", options: ["manager", "accountant", "admin", "archived"], required: true },
   { key: "active", label: "Активен", type: "bool" },
+  { key: "color", label: "Цвет метки «Чья»", wide: true,
+    input: ({ value, onChange, row }) => <ColorInput value={value} onChange={onChange} fallback={defaultOwnerColor(row.initials ?? "")} /> },
 ];
 
 export default function Users() {
@@ -39,7 +42,7 @@ export default function Users() {
           <tbody>
             {(data ?? []).map((u) => (
               <tr key={u.id}>
-                <td><span className="avatar">{u.initials}</span></td><td>{u.name}</td><td>{u.email}</td><td>{ROLE_L[u.role]}</td>
+                <td><OwnerChip initials={u.initials} color={u.color} /></td><td>{u.name}</td><td>{u.email}</td><td>{ROLE_L[u.role]}</td>
                 <td>{u.totp_enabled ? "включена" : "—"}</td><td>{u.active ? "активен" : "отключён"}</td>
                 <td className="actions">
                   <button className="btn small ghost" onClick={() => setEdit(u)}>Изменить</button>

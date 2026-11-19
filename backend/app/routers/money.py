@@ -32,6 +32,8 @@ def fy_quarter(d: date) -> str:
 def _sales_save(o: SalesInvoice, data: dict, db: Session, user, created):
     if created and not (o.number or "").strip():
         o.number = next_invoice_number(db, o.date)[0]
+        if not o.number:
+            raise HTTPException(422, "Укажите номер инвойса (автонумерация ещё не включена)")
     if created:
         _bump_counter(db, o.number)
     if o.status not in SALES_STATUSES:
@@ -99,13 +101,14 @@ def fy_code(d: date) -> str:
     return f"{start % 100:02d}{(start + 1) % 100:02d}"
 
 
-def next_invoice_number(db: Session, d: date | None = None) -> tuple[str, int]:
-    """Next number in the single queue 300, 301, 302…: after «Последний номер инвойса» in the settings, or after the
-    highest number in the register when that setting is empty (999 is treated as a placeholder, not a real number)."""
+def next_invoice_number(db: Session, d: date | None = None) -> tuple[str, int] | tuple[None, None]:
+    """Next number in the single queue 300, 301, 302… for all clients. Works only after the admin has entered the last
+    issued number in «Справочники → Налоги и нумерация»; until then numbers are typed by hand."""
+    last = str(get_setting(db, "sales_invoice_last")).strip()
+    if not last.isdigit():
+        return None, None
     used = {int(m[2]) for (n,) in db.execute(select(SalesInvoice.number)) if (m := INV_RE.match(n or ""))}
-    last = get_setting(db, "sales_invoice_last")
-    seq = int(last) if str(last).strip().isdigit() else max((x for x in used if x != 999), default=0)
-    seq += 1
+    seq = int(last) + 1
     while seq in used:
         seq += 1
     return f"EBFI-{fy_code(d or date.today())}-{seq}", seq
@@ -115,8 +118,8 @@ def _bump_counter(db: Session, number: str):
     m = INV_RE.match(number or "")
     if not m:
         return
-    last = get_setting(db, "sales_invoice_last")
-    if not str(last).strip().isdigit() or int(m[2]) > int(last):
+    last = str(get_setting(db, "sales_invoice_last")).strip()
+    if last.isdigit() and int(m[2]) > int(last):  # auto-numbering on: move the counter forward
         row = db.get(Setting, "sales_invoice_last") or Setting(key="sales_invoice_last", value="")
         row.value = m[2]
         db.add(row)
@@ -153,6 +156,8 @@ def invoice_from_lines(data: dict, db: Session = Depends(get_db), user: User = D
     inv_date = date.fromisoformat(data["date"]) if data.get("date") else date.today()
     inv = SalesInvoice(number=(data.get("number") or "").strip() or next_invoice_number(db, inv_date)[0], date=inv_date,
                        client_id=clients.pop(), currency=currencies.pop(), amount=amount, status="Not Verified")
+    if not inv.number:
+        raise HTTPException(422, "Укажите номер инвойса (автонумерация ещё не включена)")
     if db.scalar(select(SalesInvoice).where(SalesInvoice.number == inv.number)):
         raise HTTPException(409, f"Инвойс {inv.number} уже есть")
     _bump_counter(db, inv.number)
