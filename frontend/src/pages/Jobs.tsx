@@ -80,7 +80,8 @@ export default function Jobs() {
       render: (j) => (
         <button type="button" className={"date-cell" + (j.dates?.length ? "" : " empty-dates")} title="Открыть календарь дат инспекции"
           onClick={(e) => { e.stopPropagation(); setDates(j); }}>
-          {j.dates?.length ? compactDates(j.dates) : "указать даты"}
+          {j.dates?.length ? compactDates(j.dates)
+            : (j.assignments ?? []).map((a: any) => a.dates_text).filter(Boolean).join("; ") || "указать даты"}
         </button>
       ),
     },

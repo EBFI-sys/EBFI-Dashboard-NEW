@@ -66,27 +66,52 @@ function RefSelect({ f, value, onChange }: { f: Field; value: any; onChange: (v:
   );
 }
 
+/** Pick several rows of a reference list: chosen ones as removable chips, a search box and a tidy result list. */
 function MultiRef({ f, value, onChange }: { f: Field; value: number[]; onChange: (v: number[]) => void }) {
   const rows = useRef_(f.ref!);
   const [q, setQ] = useState("");
+  const [hi, setHi] = useState(0);
   const label = f.refLabel ?? "name";
-  const sel = new Set(value ?? []);
-  const shown = rows.filter((r) => sel.has(r.id) || (q && String(r[label]).toLowerCase().includes(q.toLowerCase()))).slice(0, 30);
+  const sel = value ?? [];
+  const has = new Set(sel);
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const s = q.trim().toLowerCase();
+  const found = s ? rows.filter((r) => !r.deleted && String(r[label]).toLowerCase().includes(s)).slice(0, 40) : [];
+  const toggle = (id: number) => {
+    onChange(has.has(id) ? sel.filter((x) => x !== id) : [...sel, id]);
+  };
+  const key = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, found.length - 1)); }
+    if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+    if (e.key === "Enter" && found[hi]) { e.preventDefault(); toggle(found[hi].id); setQ(""); setHi(0); }
+    if (e.key === "Backspace" && !q && sel.length) onChange(sel.slice(0, -1));
+  };
   return (
-    <div className="multiref">
-      <input placeholder="Найти…" value={q} onChange={(e) => setQ(e.target.value)} />
-      <div className="multiref-list">
-        {shown.map((r) => (
-          <label key={r.id} className="check">
-            <input type="checkbox" checked={sel.has(r.id)} onChange={(e) => {
-              const n = new Set(sel);
-              e.target.checked ? n.add(r.id) : n.delete(r.id);
-              onChange([...n]);
-            }} />
-            {r[label]}
-          </label>
+    <div className="mref">
+      <div className="mref-box">
+        {sel.map((id) => (
+          <span key={id} className="mref-chip">
+            {byId.get(id)?.[label] ?? `#${id}`}
+            <button type="button" aria-label="Убрать" onClick={() => toggle(id)}>×</button>
+          </span>
         ))}
+        <input value={q} onChange={(e) => { setQ(e.target.value); setHi(0); }} onKeyDown={key}
+          placeholder={sel.length ? "Добавить ещё…" : "Начните вводить имя…"} aria-label={f.label} />
       </div>
+      {s && (
+        <div className="mref-list" role="listbox">
+          {found.length === 0 && <div className="mref-empty">Никого не нашлось</div>}
+          {found.map((r, i) => (
+            <button type="button" key={r.id} role="option" aria-selected={has.has(r.id)}
+              className={"mref-opt" + (i === hi ? " hi" : "") + (has.has(r.id) ? " on" : "")}
+              onMouseEnter={() => setHi(i)} onClick={() => toggle(r.id)}>
+              <span className="mref-tick">{has.has(r.id) ? "✓" : ""}</span>
+              <span className="mref-name">{r[label]}</span>
+              {(r.country || r.specialization) && <span className="mref-sub">{[r.country, r.specialization].filter(Boolean).join(" · ")}</span>}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

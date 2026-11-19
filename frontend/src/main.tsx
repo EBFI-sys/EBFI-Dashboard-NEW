@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { BookOpen, CalendarRange, FileText, Gauge, History, Inbox, Landmark, LineChart, UserCog, Wallet } from "lucide-react";
+import { Moon, Sun, BookOpen, CalendarRange, FileText, Gauge, History, Inbox, Landmark, LineChart, UserCog, Wallet } from "lucide-react";
 import { AuthProvider, useAuth } from "./auth";
 import { CurrencyProvider } from "./currency";
 import "./styles.css";
@@ -37,6 +37,21 @@ const NAV = [
   ] },
 ];
 
+function ThemeSwitch() {
+  const [theme, setTheme] = React.useState(() => document.documentElement.dataset.theme || "dark");
+  const set = (t: string) => {
+    setTheme(t);
+    document.documentElement.dataset.theme = t;
+    try { localStorage.setItem("ebfi.theme", t); } catch { /* private window */ }
+  };
+  return (
+    <div className="theme-switch" role="group" aria-label="Тема оформления">
+      <button type="button" className={theme === "dark" ? "on" : ""} onClick={() => set("dark")}><Moon aria-hidden />Ночь</button>
+      <button type="button" className={theme === "light" ? "on" : ""} onClick={() => set("light")}><Sun aria-hidden />День</button>
+    </div>
+  );
+}
+
 function Shell() {
   const { me, loading, logout, can } = useAuth();
   if (loading) return <div className="center muted">Загрузка…</div>;
@@ -61,6 +76,7 @@ function Shell() {
           ))}
         </nav>
         <div className="side-foot">
+          <ThemeSwitch />
           <NavLink to="/profile" className="me">
             <span className="avatar">{me.initials}</span>
             <span>{me.name}<small>{{ admin: "админ", accountant: "бухгалтер", manager: "менеджер" }[me.role]}</small></span>

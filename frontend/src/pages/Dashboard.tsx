@@ -24,8 +24,8 @@ function monthsBack(n: number) {
   return out;
 }
 
-const C1 = "#4cc9f0", C2 = "#a5b4fc", GRID = "rgba(255,255,255,0.07)";
-const TT = { contentStyle: { background: "#141c2c", border: "1px solid rgba(255,255,255,0.16)", borderRadius: 10, color: "#e8edf5" }, cursor: { fill: "rgba(255,255,255,0.04)" } };
+const C1 = "var(--accent)", C2 = "var(--accent-2)", GRID = "var(--chart-grid)";
+const TT = { contentStyle: { background: "var(--pop)", border: "1px solid var(--line-hi)", borderRadius: 10, color: "var(--ink)" }, cursor: { fill: "rgba(var(--tint),0.04)" } };
 
 export default function Dashboard() {
   const clients = useRef_("clients");

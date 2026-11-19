@@ -30,7 +30,7 @@ export const defaultOwnerColor = (initials: string) => hex(OWNER_HUE[initials] ?
 
 export function chipStyle(c: string): React.CSSProperties {
   return {
-    color: `color-mix(in srgb, ${c} 55%, white)`,
+    color: `color-mix(in srgb, ${c} 58%, var(--chip-mix))`,
     background: `color-mix(in srgb, ${c} 16%, transparent)`,
     borderColor: `color-mix(in srgb, ${c} 45%, transparent)`,
   };

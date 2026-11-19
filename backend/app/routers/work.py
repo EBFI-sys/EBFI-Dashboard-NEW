@@ -328,7 +328,8 @@ def sync_assignment(db: Session, job: Job, grp: int, data: dict, strict: bool = 
             plan = {m: {"dates_text": format_dates(ds), "quantity": len(ds)} for m, ds in by_m.items()}
         else:
             m = max(by_m)
-            q = qty_in if qty_in not in (None, "") else (len(dates) if unit == "day" else 0)
+            empty = qty_in in (None, "") or (unit == "day" and float(qty_in or 0) == 0)  # 0 MD with dates = not filled in
+            q = (len(dates) if unit == "day" else 0) if empty else qty_in
             plan = {m: {"dates_text": format_dates(dates), "quantity": q}}
     else:
         plan = {ref: {"dates_text": text or None, "quantity": qty_in or 0}}
@@ -367,6 +368,24 @@ def sync_assignment(db: Session, job: Job, grp: int, data: dict, strict: bool = 
     db.flush()
     db.refresh(job)
     return out
+
+
+def fill_from_dates(db: Session) -> int:
+    """Open-month day lines with dates but 0 MD (dates typed in words before the parser understood them):
+    count the days and store the dates in the standard form. Runs at start-up; touches nothing else."""
+    closed = {m.month for m in db.scalars(select(MonthClose))}
+    n = 0
+    for l in list(db.scalars(select(JobLine).where(JobLine.deleted.is_(False), JobLine.unit == "day", JobLine.quantity == 0,
+                                              JobLine.dates_text.is_not(None)))):
+        if l.month in closed or not parse_dates(l.dates_text, l.month):
+            continue
+        group = [x for x in l.job.lines if not x.deleted and (x.grp or 1) == (l.grp or 1)]
+        if len(group) == 1:  # a single-month assignment: rebuild it from its dates (may move to the right month)
+            sync_assignment(db, l.job, l.grp or 1, {"dates_text": l.dates_text, "quantity": None}, strict=False)
+            n += 1
+    if n:
+        db.commit()
+    return n
 
 
 def assignments(job: Job, db: Session, ctx: Context) -> list[dict]:

@@ -30,6 +30,9 @@ def startup():
     Base.metadata.create_all(engine)
     upgrade(engine)
     with SessionLocal() as db:
+        n = work.fill_from_dates(db)
+        if n:
+            log.warning("Filled MD from dates in %s lines", n)
         if not db.scalar(select(PaymentMethod).limit(1)):
             db.add_all(PaymentMethod(name=n, rko_percent=0, rko_fixed_inr=0) for n in DEFAULT_METHODS)
             db.commit()
