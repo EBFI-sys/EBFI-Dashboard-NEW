@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { Moon, Sun, BookOpen, CalendarRange, FileText, Gauge, History, Inbox, Landmark, LineChart, UserCog, Wallet } from "lucide-react";
+import { Clock, Moon, Sun, BookOpen, CalendarRange, FileText, Gauge, History, Inbox, Landmark, LineChart, UserCog, Wallet } from "lucide-react";
 import { AuthProvider, useAuth } from "./auth";
 import { CurrencyProvider } from "./currency";
 import "./styles.css";
@@ -52,6 +52,27 @@ function ThemeSwitch() {
   );
 }
 
+/** Running India date and time: the app treats it as «now» (requests month, dates, month of new records). */
+function IstClock() {
+  const [now, setNow] = React.useState(() => new Date());
+  React.useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const tz = "Asia/Kolkata";
+  const date = new Intl.DateTimeFormat("ru-RU", { timeZone: tz, weekday: "short", day: "numeric", month: "long", year: "numeric" }).format(now)
+    .replace(/\s?г\.$/, "").replace(/^./, (c) => c.toUpperCase());
+  const time = new Intl.DateTimeFormat("ru-RU", { timeZone: tz, hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(now);
+  return (
+    <div className="ist-clock" title="Время в Индии (IST, UTC+5:30) — по нему система определяет текущую дату">
+      <Clock aria-hidden />
+      <span className="ist-date">{date}</span>
+      <span className="ist-time">{time}</span>
+      <span className="ist-zone">IST</span>
+    </div>
+  );
+}
+
 function Shell() {
   const { me, loading, logout, can } = useAuth();
   if (loading) return <div className="center muted">Загрузка…</div>;
@@ -85,6 +106,7 @@ function Shell() {
         </div>
       </aside>
       <main className="main">
+        <div className="topbar"><IstClock /></div>
         {needs2fa && (
           <div className="banner">
             Для вашей роли нужна двухфакторная аутентификация. Пока она не включена, изменения сохранить нельзя.{" "}

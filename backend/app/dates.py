@@ -9,6 +9,8 @@ Also the wording clients use in requests: "16th, 17th, 18th, 19th & 20th Nov-26"
 import datetime as dt
 import re
 
+from . import clock
+
 PART = re.compile(r"((?:\d{1,2}\s*[-–,]\s*)*\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?")
 ISO = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
 SLASH = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
@@ -25,7 +27,7 @@ SPAN = re.compile(r"(\d{1,2})\.(\d{1,2})\s*[-–]\s*(\d{1,2})\.(\d{1,2})\.(\d{4}
 def parse_dates(text: str | None, month: str | None = None) -> list[dt.date]:
     if not text:
         return []
-    default_year = int(month[:4]) if month else dt.date.today().year
+    default_year = int(month[:4]) if month else clock.today().year
     out: set[dt.date] = set()
     for y, m, d in ISO.findall(text):
         try:

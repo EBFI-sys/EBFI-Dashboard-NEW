@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, monthLabel } from "../api";
+import { api, monthLabel, today as istToday, thisMonth } from "../api";
 import { Modal, Pill, useAsync } from "./ui";
 
 const WEEK = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -14,7 +14,7 @@ export function shiftMonth(month: string, by: number) {
 }
 
 /** Month grid, Monday first. `render` fills a day cell; `onPick` makes days clickable. */
-export function MonthGrid({ month, render, onPick, selected, today = new Date().toISOString().slice(0, 10) }: {
+export function MonthGrid({ month, render, onPick, selected, today = istToday() }: {
   month: string; render?: (date: string) => React.ReactNode; onPick?: (date: string) => void; selected?: Set<string>; today?: string;
 }) {
   const [y, m] = month.split("-").map(Number);
@@ -38,7 +38,7 @@ export function MonthGrid({ month, render, onPick, selected, today = new Date().
 
 /** Pop-up calendar of agreed inspection dates for all jobs. */
 export function JobsCalendar({ onClose }: { onClose: () => void }) {
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(thisMonth());
   const [day, setDay] = useState<string | null>(null);
   const { data, loading } = useAsync(() => api.get<any[]>(`/calendar?month=${month}`), [month]);
   const byDay = useMemo(() => {
@@ -88,7 +88,7 @@ export function JobsCalendar({ onClose }: { onClose: () => void }) {
 export function DatesField({ value, onChange, month }: { value: string | null; onChange: (v: string) => void; month?: string }) {
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
-  const [view, setView] = useState(month || new Date().toISOString().slice(0, 7));
+  const [view, setView] = useState(month || thisMonth());
 
   useEffect(() => {
     if (!open) return;
@@ -135,7 +135,7 @@ export function JobDatesModal({ job, onClose, onSaved }: {
   const as: any[] = job.assignments ?? [];
   const [grp, setGrp] = useState<number>(as[0]?.grp ?? 1);
   const [dates, setDates] = useState<Record<number, Set<string>>>(() => Object.fromEntries(as.map((a) => [a.grp, new Set<string>(a.dates ?? [])])));
-  const [view, setView] = useState<string>(as[0]?.dates?.at(-1)?.slice(0, 7) ?? new Date().toISOString().slice(0, 7));
+  const [view, setView] = useState<string>(as[0]?.dates?.at(-1)?.slice(0, 7) ?? thisMonth());
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const a = as.find((x) => x.grp === grp);

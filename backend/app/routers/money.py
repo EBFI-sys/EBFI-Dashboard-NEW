@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..calc import Context, get_setting
 from ..config import settings
 from ..db import get_db
@@ -71,11 +72,11 @@ def _sales_after(o: SalesInvoice, db: Session):
     if client and client.is_indian and o.taxable_inr and not o.deleted:
         amt = (Decimal(o.taxable_inr) * Decimal(get_setting(db, "tds_rate"))).quantize(Decimal("0.01"))
         if not entry:
-            entry = TdsEntry(sales_invoice_id=o.id, amount_inr=amt, quarter=fy_quarter(o.date or date.today()))
+            entry = TdsEntry(sales_invoice_id=o.id, amount_inr=amt, quarter=fy_quarter(o.date or clock.today()))
             db.add(entry)
         else:
             entry.amount_inr = amt
-            entry.quarter = fy_quarter(o.date or date.today())
+            entry.quarter = fy_quarter(o.date or clock.today())
     elif entry and entry.status == "Ожидается":
         db.delete(entry)
 
@@ -111,7 +112,7 @@ def next_invoice_number(db: Session, d: date | None = None) -> tuple[str, int] |
     seq = int(last) + 1
     while seq in used:
         seq += 1
-    return f"EBFI-{fy_code(d or date.today())}-{seq}", seq
+    return f"EBFI-{fy_code(d or clock.today())}-{seq}", seq
 
 
 def _bump_counter(db: Session, number: str):
@@ -153,7 +154,7 @@ def invoice_from_lines(data: dict, db: Session = Depends(get_db), user: User = D
     if len(clients) != 1 or len(currencies) != 1:
         raise HTTPException(422, "Все строки должны быть одного клиента и одной валюты")
     amount = sum(Decimal(l.quantity or 0) * Decimal(l.client_rate or 0) + Decimal(l.overtime_client or 0) for l in lines)
-    inv_date = date.fromisoformat(data["date"]) if data.get("date") else date.today()
+    inv_date = date.fromisoformat(data["date"]) if data.get("date") else clock.today()
     inv = SalesInvoice(number=(data.get("number") or "").strip() or next_invoice_number(db, inv_date)[0], date=inv_date,
                        client_id=clients.pop(), currency=currencies.pop(), amount=amount, status="Not Verified")
     if not inv.number:
@@ -257,7 +258,7 @@ def _ii_save(o: InspectorInvoice, data: dict, db: Session, user, created):
     if "job_ids" in data:
         o.jobs = [db.get(Job, int(j)) for j in data["job_ids"] if db.get(Job, int(j))]
     if o.paid and not o.paid_date:
-        o.paid_date = date.today()
+        o.paid_date = clock.today()
     if not o.inspector_id or o.amount is None:
         raise HTTPException(422, "Нужны инспектор и сумма")
 

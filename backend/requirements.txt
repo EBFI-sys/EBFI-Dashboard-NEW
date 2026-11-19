@@ -10,3 +10,4 @@ segno
 cryptography
 python-multipart
 openpyxl==3.1.5
+tzdata>=2024.1

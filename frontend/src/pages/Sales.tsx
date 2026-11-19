@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, inr, money, monthLabel, thisMonth } from "../api";
+import { api, inr, money, monthLabel, thisMonth, today } from "../api";
 import CrudTable, { Field } from "../components/CrudTable";
 import { ErrorLine, Modal, useAsync } from "../components/ui";
 import { CURRENCIES, useRef_ } from "../refs";
@@ -29,7 +29,7 @@ export default function Sales() {
       <header className="page-head"><div><h1>Инвойсы клиентам</h1>
         <p className="lede">GST считается автоматически для клиентов из Индии: CGST + SGST в своём штате, IGST — в другом. Для каждого такого инвойса создаётся запись в реестре TDS.</p></div></header>
       <CrudTable periodKey="date" endpoint="/sales-invoices" title="Реестр инвойсов" fields={fields} csvName="sales-invoices.csv"
-        defaults={{ status: "Not Verified", date: new Date().toISOString().slice(0, 10), currency: "USD", number: next.data?.number }}
+        defaults={{ status: "Not Verified", date: today(), currency: "USD", number: next.data?.number }}
         toolbar={(_, reload) => <button className="btn" onClick={() => setFromLines(() => () => { reload(); next.reload(); })}>Инвойс из работ</button>} />
       {fromLines && <FromLines onClose={() => setFromLines(null)} onDone={fromLines} />}
     </div>
@@ -43,7 +43,7 @@ function FromLines({ onClose, onDone }: { onClose: () => void; onDone: () => voi
   const [cur, setCur] = useState("");
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [number, setNumber] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(today());
   const [err, setErr] = useState<string | null>(null);
   const { data } = useAsync(() => api.get<any[]>(`/lines?month=${month}`), [month]);
   const client = clients.find((c) => String(c.id) === clientId);

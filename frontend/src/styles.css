@@ -197,7 +197,7 @@ input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent);
 .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
 .toolbar h2 { margin: 0; }
 .spacer { flex: 1; }
-.search { width: min(240px, 100%); }
+.search { width: min(190px, 100%); }
 .table-wrap { overflow-x: auto; }
 .table-wrap.tall { max-height: 360px; overflow-y: auto; }
 table { width: 100%; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
@@ -397,3 +397,10 @@ body, .card, .side, .modal, .popover, input, select, textarea, .btn { transition
 .mref-tick { color: var(--accent); font-weight: 700; }
 .mref-sub { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .mref-empty { padding: 10px; color: var(--muted); font-size: 13px; }
+/* India clock */
+.topbar { display: flex; justify-content: flex-end; margin: -6px 0 10px; }
+.ist-clock { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px;
+  background: rgba(var(--tint),0.04); font-size: 12.5px; color: var(--muted); backdrop-filter: blur(10px); }
+.ist-clock svg { width: 14px; height: 14px; color: var(--accent); }
+.ist-time { color: var(--ink-strong); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.ist-zone { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; color: var(--accent); }

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..calc import Context, compute_line
 from ..dates import format_dates, parse_dates
 from ..db import get_db
@@ -105,7 +106,7 @@ def next_job_number(db: Session, client_id: int) -> str:
     if not client or not client.job_code:
         raise HTTPException(422, f"У клиента {client.name if client else ''} не указан код в номере работы (КК). "
                                  "Укажите его в «Справочники → Клиенты» или введите Job number вручную.")
-    code, yy = client.job_code.zfill(2), f"{dt.date.today():%y}"
+    code, yy = client.job_code.zfill(2), f"{clock.today():%y}"
     seq, width = last_seq(db, yy, code)
     return f"{yy}.{code}-{seq + 1:0{width}d}"
 
@@ -308,7 +309,7 @@ LAST_ONLY = ("overtime_client", "overtime_inspector", "rko_override_inr")
 
 
 def _this_month() -> str:
-    return dt.date.today().strftime("%Y-%m")
+    return clock.today().strftime("%Y-%m")
 
 
 def sync_assignment(db: Session, job: Job, grp: int, data: dict, strict: bool = True) -> list[JobLine]:

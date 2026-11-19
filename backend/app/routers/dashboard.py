@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..calc import Context, compute_line
 from ..db import get_db
 from ..models import Client, Country, Inspector, InspectorInvoice, Job, JobLine, Request, SalesInvoice, TdsEntry, User
@@ -43,11 +44,11 @@ def in_period(month: str, period: str) -> bool:
     if not period or period == "all":
         return True
     if period == "fy":  # current Indian financial year
-        t = date.today()
+        t = clock.today()
         start = date(t.year if t.month >= 4 else t.year - 1, 4, 1).strftime("%Y-%m")
         return month >= start
     if period == "last3":
-        t = date.today()
+        t = clock.today()
         y, m = t.year, t.month - 2
         if m <= 0:
             y, m = y - 1, m + 12

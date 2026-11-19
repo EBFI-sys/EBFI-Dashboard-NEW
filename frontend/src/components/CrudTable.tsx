@@ -1,6 +1,6 @@
 import { Pencil } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { api, dateLabel, downloadCsv, money, monthLabel, num } from "../api";
+import { api, dateLabel, downloadCsv, money, monthLabel, num, thisMonth } from "../api";
 import { useAuth } from "../auth";
 import { invalidateRef, loadRef, useRef_ } from "../refs";
 import { DatesField } from "./Calendar";
@@ -42,6 +42,7 @@ type Props = {
   onRowClick?: (row: any) => void;
   allowCreate?: boolean;
   periodLabel?: string;
+  periodDefault?: "current" | "all"; // open on the current month (India time) or on the whole period
   periodKey?: string; // date field to filter by period (month or custom range)
   columnFilters?: boolean; // Excel-style filters in column headers (default true)
 };
@@ -268,7 +269,7 @@ export default function CrudTable(p: Props) {
   const { data, error, loading, reload } = useAsync(() => api.get<any[]>(p.endpoint + (p.query ? `?${p.query}` : "")), [p.endpoint, p.query]);
   const [edit, setEdit] = useState<any | null>(null);
   const [q, setQ] = useState("");
-  const [period, setPeriod] = useState<string>("all");
+  const [period, setPeriod] = useState<string>(p.periodKey && p.periodDefault === "current" ? thisMonth() : "all");
   const [range, setRange] = useState<{ from: string; to: string }>({ from: "", to: "" });
   const [toast, setToast] = useState<string | null>(null);
   const canWrite = can(p.writeRight ?? "write");
@@ -318,7 +319,7 @@ export default function CrudTable(p: Props) {
     if (!p.periodKey) return { months: [] as string[], quarters: [] as string[] };
     const ds = (data ?? []).map((x) => (x[p.periodKey!] ?? "").slice(0, 10)).filter(Boolean);
     return {
-      months: [...new Set(ds.map((d) => d.slice(0, 7)))].sort().reverse(),
+      months: [...new Set([...ds.map((d) => d.slice(0, 7)), thisMonth()])].sort().reverse(),
       quarters: [...new Set(ds.map(quarterOf))].sort().reverse(),
     };
   }, [data, p.periodKey]);
@@ -351,7 +352,7 @@ export default function CrudTable(p: Props) {
             {p.periodLabel && <span className="muted small">{p.periodLabel}</span>}
             <select value={period} onChange={(e) => setPeriod(e.target.value)} aria-label={p.periodLabel ?? "Период"}>
               <option value="all">Весь период</option>
-              {periods.months.map((m) => <option key={m} value={m}>{monthLabel(m)}</option>)}
+              {periods.months.map((m) => <option key={m} value={m}>{monthLabel(m)}{m === thisMonth() ? " (текущий)" : ""}</option>)}
               {periods.quarters.map((qq) => <option key={qq} value={qq}>{qq.replace("Q", "Квартал ")}</option>)}
               <option value="range">Свой период…</option>
             </select>

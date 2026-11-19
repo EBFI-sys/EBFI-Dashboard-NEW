@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, money } from "../api";
+import { api, money, today } from "../api";
 import CrudTable, { Field } from "../components/CrudTable";
 import { ErrorLine, Modal } from "../components/ui";
 import { CURRENCIES, useRef_ } from "../refs";
@@ -51,7 +51,8 @@ export default function Requests() {
         csvName="requests.csv"
         periodKey="received_date"
         periodLabel="Месяц получения"
-        defaults={{ status: "В процессе", type: "Inspection", received_date: new Date().toISOString().slice(0, 10), client_currency: "USD", inspector_currency: "USD", inspector_ids: [] }}
+        periodDefault="current"
+        defaults={{ status: "В процессе", type: "Inspection", received_date: today(), client_currency: "USD", inspector_currency: "USD", inspector_ids: [] }}
         filter={(r) => show === "all" || (show === "open" ? !CLOSED.includes(r.status) : CLOSED.includes(r.status))}
         toolbar={() => (
           <div className="seg">

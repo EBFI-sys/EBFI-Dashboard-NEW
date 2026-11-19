@@ -75,7 +75,10 @@ export const dateLabel = (d: string | null | undefined) => {
   return `${dd}.${m}.${y}`;
 };
 
-export const thisMonth = () => new Date().toISOString().slice(0, 7);
+/** The business runs on India time: «today» and «this month» are the date in Asia/Kolkata, wherever the user is. */
+export const TZ = "Asia/Kolkata";
+export const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+export const thisMonth = () => today().slice(0, 7);
 
 export function downloadCsv(name: string, rows: Record<string, unknown>[], cols: { key: string; label: string }[]) {
   const esc = (v: unknown) => {

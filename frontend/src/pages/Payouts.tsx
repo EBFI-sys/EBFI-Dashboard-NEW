@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, money, monthLabel, num } from "../api";
+import { api, money, monthLabel, num, today } from "../api";
 import CrudTable, { Field } from "../components/CrudTable";
 import { Modal, Pill } from "../components/ui";
 import { CURRENCIES } from "../refs";
@@ -124,7 +124,7 @@ export default function Payouts() {
       <header className="page-head"><div><h1>Счета инспекторов</h1>
         <p className="lede">Счета, которые присылают инспекторы: регистрация, PDF и отметка оплаты. Пометка у суммы — расхождение с Табелем (дни × ставка инспектора в его валюте); нажмите на неё, чтобы увидеть, где именно.</p></div></header>
       <CrudTable periodKey="invoice_date" endpoint="/inspector-invoices" title={show === "open" ? "К оплате" : "Все счета"} fields={fields} csvName="inspector-invoices.csv"
-        defaults={{ currency: "USD", paid: false, invoice_date: new Date().toISOString().slice(0, 10), job_ids: [] }}
+        defaults={{ currency: "USD", paid: false, invoice_date: today(), job_ids: [] }}
         filter={(r) => show === "all" || !r.paid}
         toolbar={() => (
           <div className="seg">

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { api, money, monthLabel, num, pct } from "../api";
+import { api, money, monthLabel, num, pct, thisMonth } from "../api";
 import { ErrorLine, Pill, useAsync } from "../components/ui";
 import { REGIONS, useRef_ } from "../refs";
 import DataTable from "../components/DataTable";
@@ -16,7 +16,8 @@ const TABS = [
 
 function monthsBack(n: number) {
   const out: string[] = [];
-  const d = new Date();
+  const [y, m] = thisMonth().split("-").map(Number);
+  const d = new Date(y, m - 1, 1);
   for (let i = 0; i < n; i++) {
     out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
     d.setMonth(d.getMonth() - 1);
