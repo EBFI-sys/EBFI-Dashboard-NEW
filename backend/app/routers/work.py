@@ -381,8 +381,12 @@ def fill_from_dates(db: Session) -> int:
             continue
         group = [x for x in l.job.lines if not x.deleted and (x.grp or 1) == (l.grp or 1)]
         if len(group) == 1:  # a single-month assignment: rebuild it from its dates (may move to the right month)
-            sync_assignment(db, l.job, l.grp or 1, {"dates_text": l.dates_text, "quantity": None}, strict=False)
-            n += 1
+            try:
+                with db.begin_nested():
+                    sync_assignment(db, l.job, l.grp or 1, {"dates_text": l.dates_text, "quantity": None}, strict=False)
+                n += 1
+            except Exception:  # e.g. the dates fall into a closed month: leave the line for a manager
+                continue
     if n:
         db.commit()
     return n
