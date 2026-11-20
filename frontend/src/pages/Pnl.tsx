@@ -6,10 +6,10 @@ import DataTable, { Col } from "../components/DataTable";
 import { ErrorLine, Pill, Toast, useAsync } from "../components/ui";
 import { CurrencySwitch, useCurrency } from "../currency";
 
-const MONEY = ["base_inr", "gst_inr", "tds_inr", "cash_in_inr", "admin_inr", "cost_inr", "rko_inr", "net_inr"] as const;
-const OPTIONAL_MONEY = new Set(["gst_inr", "tds_inr", "cash_in_inr", "admin_inr", "rko_inr"]);
+const MONEY = ["base_inr", "gst_inr", "tds_inr", "wht_inr", "cash_in_inr", "admin_inr", "cost_inr", "rko_inr", "net_inr"] as const;
+const OPTIONAL_MONEY = new Set(["gst_inr", "tds_inr", "wht_inr", "cash_in_inr", "admin_inr", "rko_inr"]);
 const LABEL: Record<string, string> = {
-  base_inr: "Выручка", gst_inr: "GST", tds_inr: "TDS", cash_in_inr: "Приход", admin_inr: "Админка", cost_inr: "Подряд", rko_inr: "РКО", net_inr: "Прибыль",
+  base_inr: "Выручка", gst_inr: "GST", tds_inr: "TDS", wht_inr: "WHT", cash_in_inr: "Приход", admin_inr: "Админка", cost_inr: "Подряд", rko_inr: "РКО", net_inr: "Прибыль",
 };
 
 export default function Pnl() {
@@ -60,7 +60,7 @@ export default function Pnl() {
       total: (rs) => pct(sum(rs, "base_inr") ? (sum(rs, "net_inr") / sum(rs, "base_inr")) * 100 : null) },
   ];
 
-  const csv = () => downloadCsv(`pnl-${month}-${cur}.csv`, visible.map((r) => ({
+  const csv = () => downloadCsv(`fin-results-${month}-${cur}.csv`, visible.map((r) => ({
     job: r.job_number, client: r.client_name, country: r.country, inspector: r.inspector_name, owner: r.owner, status: r.job_status,
     dates: r.dates_text, qty: r.quantity, unit: r.unit, currency: r.currency, rate: r.client_rate, cost_rate: r.inspector_rate, fx: r.calc.fx,
     ...Object.fromEntries(MONEY.map((k) => [k, conv(r.calc[k], month)?.toFixed(2)])),
@@ -75,7 +75,7 @@ export default function Pnl() {
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>P&amp;L за {monthLabel(month)}</h1>
+          <h1>Финансовые результаты за {monthLabel(month)}</h1>
           <p className="lede">Выручка <b>{f(sum(visible, "base_inr"))}</b>, чистая прибыль <b>{f(sum(visible, "net_inr"))}</b>, приход на счёт <b>{f(sum(visible, "cash_in_inr"))}</b>.</p>
         </div>
         <div className="head-actions">

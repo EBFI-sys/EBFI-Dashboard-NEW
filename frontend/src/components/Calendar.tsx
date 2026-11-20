@@ -184,7 +184,7 @@ export function JobDatesModal({ job, onClose, onSaved }: {
         render={(d) => (!mine.has(d) && others.has(d) ? <span className="cal-dot" title="Дата другого инспектора этой работы" /> : null)} />
       <p className="muted small">
         Нажмите на день, чтобы отметить или снять дату — сохраняется сразу{saving ? " (сохраняю…)" : ""}. Даты могут идти через несколько
-        месяцев: в P&amp;L работа сама разложится по месяцам. {closed.has(view) && "Этот месяц закрыт — даты в нём не меняются. "}
+        месяцев: в финансовых результатах работа сама разложится по месяцам. {closed.has(view) && "Этот месяц закрыт — даты в нём не меняются. "}
         Выбрано: {mine.size} дн.
       </p>
       {err && <p className="error">{err}</p>}

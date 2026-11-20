@@ -4,7 +4,7 @@ import re
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .models import Country, Vendor
+from .models import Country, FinalClient, Vendor
 
 LEGAL = r"\b(co|company|corp|corporation|ltd|limited|llc|llp|inc|gmbh|ag|se|spa|s ?p ?a|srl|s ?r ?l|sas|s ?a ?s|sa|bv|nv|pvt|private|plc|oy|ab|as|kft|sro|s ?r ?o|pty|jsc|ojsc|ooo)\b"
 
@@ -58,6 +58,14 @@ def remember_vendor(db: Session, name: str | None, country: str | None = None) -
                 v.country = country
             return
     db.add(Vendor(name=n[:300], country=country or None))
+
+
+def remember_final_client(db: Session, name: str | None) -> None:
+    n = " ".join((name or "").split())[:200]
+    if not n or n in ("-", "—"):
+        return
+    if not db.scalar(select(FinalClient).where(func.lower(FinalClient.name) == n.lower())):
+        db.add(FinalClient(name=n))
 
 
 COUNTRY_FIX = {"china": "China", "gernany": "Germany", "afrika": "Africa", "marocco": "Morocco", "huangry": "Hungary",

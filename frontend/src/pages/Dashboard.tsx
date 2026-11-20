@@ -11,7 +11,7 @@ const TABS = [
   { id: "overview", label: "Обзор и финансы" },
   { id: "ops", label: "Заявки и операции" },
   { id: "cash", label: "Счета и cash flow" },
-  { id: "insp", label: "Инспекторы" },
+  { id: "insp", label: "Инспектор" },
 ];
 
 function monthsBack(n: number) {
@@ -192,7 +192,7 @@ export default function Dashboard() {
       {d && tab === "cash" && (
         <div className="grid2">
           <section className="card">
-            <h2>Инвойсы клиентам</h2>
+            <h2>Исходящие счета</h2>
             <p className="muted">Применяется только фильтр по клиенту.</p>
             <Table rows={d.sales_by_currency} cols={[
               { k: "currency", l: "Валюта" }, { k: "count", l: "Инвойсов", r: true },

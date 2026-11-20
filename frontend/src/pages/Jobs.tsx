@@ -112,7 +112,7 @@ export default function Jobs() {
       <section className="card">
         <div className="toolbar">
           <div className="seg">
-            {[["В работе,Пауза", "Активные"], ["Сдан", "Сданные"], ["", "Все"]].map(([v, l]) => (
+            {[["В работе,Пауза", "Активные"], ["Завершен", "Завершенные"], ["", "Все"]].map(([v, l]) => (
               <button key={l} className={status === v ? "on" : ""} onClick={() => setStatus(v)}>{l}</button>
             ))}
           </div>

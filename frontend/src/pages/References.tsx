@@ -13,13 +13,19 @@ const clientFields: Field[] = [
     input: ({ value, onChange, row }) => <ColorInput value={value} onChange={onChange} fallback={defaultClientColor(row.name ?? "")} /> },
   { key: "job_code", label: "Код в Job number (КК)", hint: "26.19-478 → код 19. Номер новой работы присваивается по очереди этого кода" },
   { key: "legal_name", label: "Полное юр. название", wide: true },
+  { key: "address", label: "Адрес для инвойса", type: "textarea", list: false, hint: "Юридический адрес клиента — как он будет напечатан в инвойсе" },
   { key: "is_indian", label: "Клиент из Индии (GST и TDS)", type: "bool" },
+  { key: "wht", label: "Удерживает WHT 5% (на счёт приходит сумма минус WHT)", type: "bool" },
   { key: "gstin", label: "GSTIN" },
   { key: "state", label: "Штат (для CGST/SGST или IGST)" },
   { key: "default_currency", label: "Валюта по умолчанию", type: "select", options: CURRENCIES },
   { key: "contact_name", label: "Контакт", list: false },
   { key: "contact_email", label: "Email контакта", list: false },
   { key: "notes", label: "Примечания", type: "textarea", list: false },
+];
+const finalClientFields: Field[] = [
+  { key: "name", label: "Финальный клиент", required: true, wide: true },
+  { key: "notes", label: "Примечания", type: "textarea" },
 ];
 const inspectorFields: Field[] = [
   { key: "name", label: "Имя", required: true },
@@ -29,7 +35,7 @@ const inspectorFields: Field[] = [
   { key: "currency", label: "Валюта", type: "select", options: CURRENCIES, list: false },
   { key: "email", label: "Email" },
   { key: "phone", label: "Телефон", list: false },
-  { key: "payment_method_id", label: "Способ оплаты", type: "ref", ref: "payment-methods" },
+  { key: "payment_method_id", label: "Метод оплаты", type: "ref", ref: "payment-methods" },
   { key: "bank_details", label: "Банковские реквизиты", type: "textarea", list: false, hint: "Хранятся в зашифрованном виде; каждое изменение пишется в журнал" },
   { key: "notes", label: "Примечания", type: "textarea", list: false },
 ];
@@ -38,7 +44,7 @@ const countryFields: Field[] = [
   { key: "region", label: "Регион", type: "select", options: REGIONS, required: true },
 ];
 const pmFields: Field[] = [
-  { key: "name", label: "Способ оплаты", required: true },
+  { key: "name", label: "Метод оплаты", required: true },
   { key: "rko_percent", label: "РКО, % от суммы подряда", type: "number" },
   { key: "rko_fixed_inr", label: "РКО фиксированно, ₹", type: "money" },
 ];
@@ -54,8 +60,8 @@ const fxFields: Field[] = [
 ];
 
 const TABS = [
-  ["clients", "Клиенты"], ["inspectors", "Инспекторы"], ["vendors", "Заводы (Vendor)"], ["fx", "Курсы"], ["settings", "Налоги и нумерация"],
-  ["pm", "Способы оплаты"], ["countries", "Страны"],
+  ["clients", "Клиент"], ["final", "Финальный клиент"], ["inspectors", "Инспектор"], ["vendors", "Завод (Vendor)"], ["fx", "Курс валют"],
+  ["settings", "Налоги и нумерация"], ["pm", "Метод оплаты"], ["countries", "Страна"],
 ] as const;
 
 export default function References() {
@@ -64,13 +70,14 @@ export default function References() {
     <div className="page">
       <header className="page-head"><h1>Справочники</h1></header>
       <nav className="tabs">{TABS.map(([id, l]) => <button key={id} aria-selected={tab === id} onClick={() => setTab(id)}>{l}</button>)}</nav>
-      {tab === "clients" && <CrudTable columnFilters={false} endpoint="/clients" title="Клиенты" fields={clientFields} refName="clients" defaults={{ default_currency: "USD" }} csvName="clients.csv" />}
-      {tab === "inspectors" && <CrudTable columnFilters={false} endpoint="/inspectors" title="Инспекторы" fields={inspectorFields} refName="inspectors" defaults={{ currency: "USD" }} csvName="inspectors.csv" />}
-      {tab === "vendors" && <CrudTable columnFilters={false} endpoint="/vendors" title="Заводы (Vendor)" fields={vendorFields} refName="vendors" csvName="vendors.csv" />}
-      {tab === "fx" && <CrudTable columnFilters={false} endpoint="/fx-rates" title="Курсы к INR" fields={fxFields} writeRight="settings" defaults={{ currency: "USD" }} />}
+      {tab === "clients" && <CrudTable columnFilters={false} endpoint="/clients" title="Клиент" fields={clientFields} refName="clients" defaults={{ default_currency: "USD", wht: false, is_indian: false }} csvName="clients.csv" deleteRight="delete_work" />}
+      {tab === "final" && <CrudTable columnFilters={false} endpoint="/final-clients" title="Финальный клиент" fields={finalClientFields} refName="final-clients" csvName="final-clients.csv" deleteRight="delete_work" />}
+      {tab === "inspectors" && <CrudTable columnFilters={false} endpoint="/inspectors" title="Инспектор" fields={inspectorFields} refName="inspectors" defaults={{ currency: "USD" }} csvName="inspectors.csv" />}
+      {tab === "vendors" && <CrudTable columnFilters={false} endpoint="/vendors" title="Завод (Vendor)" fields={vendorFields} refName="vendors" csvName="vendors.csv" />}
+      {tab === "fx" && <CrudTable columnFilters={false} endpoint="/fx-rates" title="Курс валют к INR" fields={fxFields} writeRight="settings" defaults={{ currency: "USD" }} />}
       {tab === "settings" && <TaxSettings />}
-      {tab === "pm" && <CrudTable columnFilters={false} endpoint="/payment-methods" title="Способы оплаты и РКО" fields={pmFields} refName="payment-methods" />}
-      {tab === "countries" && <CrudTable columnFilters={false} endpoint="/countries" title="Страны и регионы" fields={countryFields} defaults={{ region: "Europe" }} />}
+      {tab === "pm" && <CrudTable columnFilters={false} endpoint="/payment-methods" title="Метод оплаты и РКО" fields={pmFields} refName="payment-methods" />}
+      {tab === "countries" && <CrudTable columnFilters={false} endpoint="/countries" title="Страна и регион" fields={countryFields} defaults={{ region: "Europe" }} />}
     </div>
   );
 }
@@ -81,7 +88,7 @@ function TaxSettings() {
   const [toast, setToast] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   if (!data) return <ErrorLine error={error} />;
-  const L: Record<string, string> = { gst_rate: "GST (доля, 0.18 = 18%)", tds_rate: "TDS (доля, 0.10 = 10%)", admin_rate: "Админка (доля от B, 0.18 = 18%)", company_state: "Штат EBFI Privat Limited", sales_invoice_last: "Автонумерация инвойсов: последний выданный номер (NNN). Пусто — номера вводятся вручную" };
+  const L: Record<string, string> = { gst_rate: "GST (доля, 0.18 = 18%)", tds_rate: "TDS (доля, 0.10 = 10%)", admin_rate: "Админка (доля от B, 0.18 = 18%)", company_state: "Штат EBFI Privat Limited", wht_rate: "WHT (доля, 0.05 = 5%) — для клиентов с отметкой «Удерживает WHT»", sales_invoice_last: "Автонумерация инвойсов: последний выданный номер (NNN). Пусто — номера вводятся вручную" };
   return (
     <section className="card narrow">
       <h2>Ставки налогов и нумерация</h2>

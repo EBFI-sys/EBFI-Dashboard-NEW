@@ -26,4 +26,4 @@ export function useRef_(name: string): any[] {
 
 export const CURRENCIES = ["USD", "EUR", "GBP", "INR"];
 export const REGIONS = ["Europe", "China", "India", "USA", "Latin America & Canada", "Russia & CIS", "Middle East", "Asia-Pacific & other"];
-export const JOB_STATUSES = ["В работе", "Пауза", "Сдан"];
+export const JOB_STATUSES = ["В работе", "Пауза", "Завершен"];

@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 
 from ..calc import DEFAULTS, Context, get_setting, snapshot_month
 from ..db import get_db
-from ..models import Client, Country, FxRate, Inspector, MonthClose, PaymentMethod, Setting, User, Vendor
+from ..models import (Client, Country, FinalClient, FxRate, Inspector, Job, MonthClose, PaymentMethod, Request, SalesInvoice,
+                      Setting, User, Vendor)
 from ..security import decrypt, encrypt, need
 from .crud import make_crud, to_dict
 
@@ -13,7 +14,22 @@ r = APIRouter()
 r.include_router(make_crud(Country, "/countries", order_by=Country.name, search=["name"]))
 r.include_router(make_crud(Vendor, "/vendors", order_by=Vendor.name, search=["name", "country"]))
 r.include_router(make_crud(PaymentMethod, "/payment-methods", order_by=PaymentMethod.name))
-r.include_router(make_crud(Client, "/clients", order_by=Client.name, search=["name", "legal_name", "gstin"]))
+r.include_router(make_crud(FinalClient, "/final-clients", order_by=FinalClient.name, search=["name"], delete_right="delete_work"))
+
+
+def _client_in_use(o: Client, db: Session):
+    """A client can be removed from the directory only when nothing refers to it."""
+    used = []
+    for model, what in ((Job, "работ в Табеле"), (Request, "заявок"), (SalesInvoice, "исходящих счетов")):
+        n = len(db.scalars(select(model.id).where(model.client_id == o.id, model.deleted.is_(False))).all())
+        if n:
+            used.append(f"{n} {what}")
+    if used:
+        raise HTTPException(400, f"Клиент {o.name} используется: {', '.join(used)}. Удалите или перенесите их, потом клиента.")
+
+
+r.include_router(make_crud(Client, "/clients", order_by=Client.name, search=["name", "legal_name", "gstin"],
+                           delete_right="delete_work", before_delete=_client_in_use))
 r.include_router(make_crud(FxRate, "/fx-rates", order_by=[FxRate.month.desc(), FxRate.currency],
                            write_right="settings"))
 

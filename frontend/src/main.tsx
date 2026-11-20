@@ -27,9 +27,9 @@ const NAV = [
     { to: "/jobs", label: "Табель", icon: CalendarRange },
   ] },
   { group: "Финансы", items: [
-    { to: "/pnl", label: "P&L по месяцам", icon: LineChart },
-    { to: "/sales", label: "Инвойсы клиентам", icon: FileText },
-    { to: "/payouts", label: "Счета инспекторов", icon: Wallet },
+    { to: "/pnl", label: "Финансовые результаты", icon: LineChart },
+    { to: "/sales", label: "Реестр исходящих счетов", icon: FileText },
+    { to: "/payouts", label: "Реестр входящих счетов", icon: Wallet },
     { to: "/tds", label: "Реестр TDS", icon: Landmark },
   ] },
   { group: "Система", items: [
@@ -80,7 +80,7 @@ const PAGES: [string, React.ReactNode][] = [
   ["/users", <Users />], ["/profile", <Profile />],
 ];
 const LABEL: Record<string, string> = {
-  "/": "Дашборд", "/requests": "Заявки", "/jobs": "Табель", "/pnl": "P&L", "/sales": "Инвойсы клиентам", "/payouts": "Счета инспекторов",
+  "/": "Дашборд", "/requests": "Заявки", "/jobs": "Табель", "/pnl": "Финансовые результаты", "/sales": "Исходящие счета", "/payouts": "Входящие счета",
   "/tds": "Реестр TDS", "/references": "Справочники", "/audit": "Журнал", "/users": "Пользователи", "/profile": "Профиль",
 };
 

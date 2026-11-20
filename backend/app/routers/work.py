@@ -11,7 +11,7 @@ from .. import clock
 from ..calc import Context, compute_line
 from ..dates import format_dates, parse_dates
 from ..db import get_db
-from ..directory import remember_country, remember_vendor
+from ..directory import remember_country, remember_final_client, remember_vendor
 from ..models import (Client, Setting, InspectorInvoice, Inspector, Job, JobLine, MonthClose, Request, SalesInvoice, User,
                       inspector_invoice_jobs)
 from ..security import need
@@ -36,6 +36,7 @@ def _req_save(o: Request, data, db, user, created):
         o.inspector_id = o.inspector_ids[0]
     remember_country(db, o.country)
     remember_vendor(db, o.factory, o.country)
+    remember_final_client(db, o.final_client)
 
 
 r.include_router(make_crud(Request, "/requests", order_by=[Request.received_date.desc().nulls_last(), Request.id.desc()],
@@ -66,7 +67,7 @@ def create_job_from_request(rid: int, data: dict, db: Session = Depends(get_db),
         raise HTTPException(422, "Job number должен быть в формате ГГ.КК-ННН, например 26.19-478")
     if db.scalar(select(Job).where(Job.job_number == number)):
         raise HTTPException(409, f"Работа {number} уже есть в Табеле")
-    notes = "\n".join(x for x in [f"Конечный клиент: {req.final_client}" if req.final_client else "", req.notes or ""] if x) or None
+    notes = "\n".join(x for x in [f"Финальный клиент: {req.final_client}" if req.final_client else "", req.notes or ""] if x) or None
     job = Job(job_number=number, client_id=req.client_id, country=req.country, vendor=req.factory,
               owner_id=req.owner_id or user.id, status="В работе", notes=notes)
     db.add(job)
@@ -184,8 +185,8 @@ def _check_job(data: dict, db: Session, exclude_id: int | None = None):
     num = data.get("job_number")
     if num is not None and not JOB_RE.match(str(num).strip()):
         raise HTTPException(422, "Job number должен быть в формате ГГ.КК-ННН, например 26.19-478")
-    if "status" in data and data["status"] not in ("В работе", "Пауза", "Сдан"):
-        raise HTTPException(422, "Статус работы: В работе, Пауза или Сдан")
+    if "status" in data and data["status"] not in ("В работе", "Пауза", "Завершен"):
+        raise HTTPException(422, "Статус работы: В работе, Пауза или Завершен")
 
 
 @r.post("/jobs")

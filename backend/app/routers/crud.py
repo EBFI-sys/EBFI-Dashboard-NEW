@@ -63,7 +63,8 @@ def apply(obj, data: dict, extra_readonly: set[str] = frozenset()):
 def make_crud(model, prefix: str, *, order_by=None, search: list[str] = (), hide: set[str] = frozenset(),
               readonly: set[str] = frozenset(), write_right: str = "write",
               serialize: Callable | None = None, before_save: Callable | None = None,
-              after_save: Callable | None = None, delete_right: str = "delete") -> APIRouter:
+              after_save: Callable | None = None, delete_right: str = "delete",
+              before_delete: Callable | None = None) -> APIRouter:
     r = APIRouter(prefix=prefix)
     ser = serialize or (lambda o, db: to_dict(o, hide))
     has_deleted = hasattr(model, "deleted")
@@ -124,6 +125,8 @@ def make_crud(model, prefix: str, *, order_by=None, search: list[str] = (), hide
         obj = db.get(model, item_id)
         if not obj:
             raise HTTPException(404, "Не найдено")
+        if before_delete:
+            before_delete(obj, db)
         if has_deleted:
             obj.deleted = True  # soft delete: the row stays in the database
         else:

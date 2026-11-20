@@ -3,8 +3,8 @@ import { api } from "../api";
 import { ErrorLine, useAsync } from "../components/ui";
 
 const TABLES: Record<string, string> = {
-  "": "Все", inspectors: "Инспекторы (вкл. реквизиты)", inspector_invoices: "Счета инспекторов", sales_invoices: "Инвойсы клиентам",
-  jobs: "Табель (работы)", vendors: "Заводы", job_lines: "Строки P&L", requests: "Заявки", clients: "Клиенты", fx_rates: "Курсы", users: "Пользователи",
+  "": "Все", inspectors: "Инспектор (вкл. реквизиты)", inspector_invoices: "Входящие счета", sales_invoices: "Исходящие счета",
+  jobs: "Табель (работы)", vendors: "Завод", final_clients: "Финальный клиент", job_lines: "Строки финрезультата", requests: "Заявки", clients: "Клиент", fx_rates: "Курс валют", users: "Пользователи",
 };
 
 export default function Audit() {
@@ -13,7 +13,7 @@ export default function Audit() {
   return (
     <div className="page">
       <header className="page-head"><div><h1>Журнал изменений</h1>
-        <p className="lede">Кто, когда и что поменял. Перед пачкой выплат полезно открыть «Инспекторы» и проверить, не менялись ли реквизиты.</p></div></header>
+        <p className="lede">Кто, когда и что поменял. Перед пачкой выплат полезно открыть раздел «Инспектор» и проверить, не менялись ли реквизиты.</p></div></header>
       <section className="card">
         <div className="toolbar">
           <select value={table} onChange={(e) => setTable(e.target.value)} aria-label="Раздел">

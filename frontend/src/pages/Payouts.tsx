@@ -121,8 +121,8 @@ export default function Payouts() {
 
   return (
     <div className="page">
-      <header className="page-head"><div><h1>Счета инспекторов</h1>
-        <p className="lede">Счета, которые присылают инспекторы: регистрация, PDF и отметка оплаты. Пометка у суммы — расхождение с Табелем (дни × ставка инспектора в его валюте); нажмите на неё, чтобы увидеть, где именно.</p></div></header>
+      <header className="page-head"><div><h1>Реестр входящих счетов</h1>
+        <p className="lede">Счета, которые присылает инспектор: регистрация, PDF и отметка оплаты. Пометка у суммы — расхождение с Табелем (дни × ставка инспектора в его валюте); нажмите на неё, чтобы увидеть, где именно.</p></div></header>
       <CrudTable periodKey="invoice_date" endpoint="/inspector-invoices" title={show === "open" ? "К оплате" : "Все счета"} fields={fields} csvName="inspector-invoices.csv"
         defaults={{ currency: "USD", paid: false, invoice_date: today(), job_ids: [] }}
         filter={(r) => show === "all" || !r.paid}

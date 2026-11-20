@@ -3,7 +3,8 @@
     B          = (quantity × client rate + client overtime) × FX            invoice base, INR
     GST        = B × gst_rate        (Indian clients only, pass-through, not revenue)
     TDS        = B × tds_rate        (Indian clients only, goes to the TDS register, not a cost)
-    Cash in    = B + GST − TDS
+    WHT        = B × wht_rate        (clients marked «WHT», 5%: withheld by the client, not a cost either)
+    Cash in    = B + GST − TDS − WHT
     Admin      = B × admin_rate
     Contractor = (quantity × inspector rate + inspector overtime) × FX of the inspector currency
                  (the inspector may be paid in another currency than the client is billed in)
@@ -19,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from .models import Client, FxRate, Job, JobLine, MonthClose, PaymentMethod, Setting
 
-DEFAULTS = {"gst_rate": "0.18", "tds_rate": "0.10", "admin_rate": "0.18", "company_state": "Maharashtra", "sales_invoice_last": ""}
+DEFAULTS = {"gst_rate": "0.18", "tds_rate": "0.10", "admin_rate": "0.18", "company_state": "Maharashtra", "sales_invoice_last": "", "wht_rate": "0.05"}
 D0 = Decimal("0")
 
 
@@ -43,6 +44,7 @@ class Context:
         self.gst = Decimal(get_setting(db, "gst_rate"))
         self.tds = Decimal(get_setting(db, "tds_rate"))
         self.admin = Decimal(get_setting(db, "admin_rate"))
+        self.wht = Decimal(get_setting(db, "wht_rate"))
         self.rates: dict[tuple[str, str], Decimal] = {
             (r.month, r.currency): Decimal(r.rate) for r in db.scalars(select(FxRate))
         }
@@ -79,12 +81,14 @@ def compute_line(line: JobLine, job: Job, ctx: Context) -> dict:
         fxi = Fx(Decimal(line.snap_fx_insp), False, line.month) if line.snap_fx_insp is not None else fx
         gst_r, tds_r, adm_r = Decimal(line.snap_gst), Decimal(line.snap_tds), Decimal(line.snap_admin)
         indian = bool(line.snap_indian)
+        wht_r = Decimal(line.snap_wht or 0)
     else:
         fx = ctx.fx(line.month, line.currency)
         fxi = ctx.fx(line.month, icur)
         gst_r, tds_r, adm_r = ctx.gst, ctx.tds, ctx.admin
         client = ctx.client(job.client_id)
         indian = bool(client and client.is_indian)
+        wht_r = ctx.wht if client and client.wht else D0
 
     qty = Decimal(line.quantity or 0)
     amount_cur = qty * Decimal(line.client_rate or 0) + Decimal(line.overtime_client or 0)
@@ -102,7 +106,7 @@ def compute_line(line: JobLine, job: Job, ctx: Context) -> dict:
         "closed": closed,
     }
     if fx.rate is None or fxi.rate is None:  # no rate for this currency at all yet
-        out.update(base_inr=None, gst_inr=None, tds_inr=None, cash_in_inr=None, admin_inr=None,
+        out.update(base_inr=None, gst_inr=None, tds_inr=None, wht_inr=None, cash_in_inr=None, admin_inr=None,
                    cost_inr=None, rko_inr=None, net_inr=None, margin=None)
         return out
 
@@ -110,6 +114,7 @@ def compute_line(line: JobLine, job: Job, ctx: Context) -> dict:
     sub = sub_cur * fxi.rate
     gst = b * gst_r if indian else D0
     tds = b * tds_r if indian else D0
+    wht = b * wht_r
     admin = b * adm_r
     if closed and line.snap_rko_inr is not None:
         rko = Decimal(line.snap_rko_inr)
@@ -120,7 +125,7 @@ def compute_line(line: JobLine, job: Job, ctx: Context) -> dict:
         rko = (sub * Decimal(pm.rko_percent or 0) / 100 + Decimal(pm.rko_fixed_inr or 0)) if pm and sub else D0
     net = b - admin - sub - rko
     out.update(
-        base_inr=_f(b), gst_inr=_f(gst), tds_inr=_f(tds), cash_in_inr=_f(b + gst - tds),
+        base_inr=_f(b), gst_inr=_f(gst), tds_inr=_f(tds), wht_inr=_f(wht), cash_in_inr=_f(b + gst - tds - wht),
         admin_inr=_f(admin), cost_inr=_f(sub), rko_inr=_f(rko), net_inr=_f(net),
         margin=float(round(net / b * 100, 1)) if b else None,
     )
@@ -145,6 +150,7 @@ def snapshot_month(db: Session, month: str, ctx: Context) -> int:
         line.snap_fx_insp = fxi.rate
         line.snap_gst, line.snap_tds, line.snap_admin = ctx.gst, ctx.tds, ctx.admin
         line.snap_indian = bool(client and client.is_indian)
+        line.snap_wht = ctx.wht if client and client.wht else Decimal(0)
         line.snap_rko_inr = Decimal(str(live["rko_inr"] or 0))
         n += 1
     return n

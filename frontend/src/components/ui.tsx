@@ -132,7 +132,7 @@ export function Portal({ children }: { children: React.ReactNode }) {
 export function Pill({ status }: { status: string | null | undefined }) {
   const s = status ?? "—";
   const cls: Record<string, string> = {
-    "В работе": "warn", Пауза: "mute", Сдан: "ok", Выполнено: "ok", Отмена: "bad", Перенос: "mute",
+    "В работе": "warn", Пауза: "mute", Завершен: "ok", Сдан: "ok", Выполнено: "ok", Отмена: "bad", Перенос: "mute",
     "Принято в работу": "info", "В процессе": "warn",
     "Not Verified": "warn", "Отправлен клиенту": "info", Paid: "ok", Оплачено: "ok", "К оплате": "bad",
     Ожидается: "warn", "В Form 26AS": "info", Зачтён: "ok",

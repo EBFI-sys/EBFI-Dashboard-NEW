@@ -13,6 +13,7 @@ const fields: Field[] = [
   { key: "currency", label: "Валюта", type: "select", options: CURRENCIES, required: true },
   { key: "amount", label: "Сумма без GST", type: "money", currencyKey: "currency", required: true },
   { key: "gst_total", label: "GST, ₹", type: "money", form: false },
+  { key: "wht", label: "WHT", type: "money", currencyKey: "currency", form: false, optional: true },
   { key: "status", label: "Статус", type: "status", options: SALES_STATUSES, required: true },
   { key: "received_amount", label: "Получено", type: "money", currencyKey: "currency", hint: "Для индийских клиентов — сумма после удержания TDS" },
   { key: "outstanding", label: "К получению", type: "money", currencyKey: "currency", form: false },
@@ -26,7 +27,7 @@ export default function Sales() {
   const next = useAsync(() => api.get("/sales-invoices/next-number"), [fromLines]);
   return (
     <div className="page">
-      <header className="page-head"><div><h1>Инвойсы клиентам</h1>
+      <header className="page-head"><div><h1>Реестр исходящих счетов</h1>
         <p className="lede">GST считается автоматически для клиентов из Индии: CGST + SGST в своём штате, IGST — в другом. Для каждого такого инвойса создаётся запись в реестре TDS.</p></div></header>
       <CrudTable periodKey="date" endpoint="/sales-invoices" title="Реестр инвойсов" fields={fields} csvName="sales-invoices.csv"
         defaults={{ status: "Not Verified", date: today(), currency: "USD", number: next.data?.number }}

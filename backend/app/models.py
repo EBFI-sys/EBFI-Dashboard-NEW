@@ -60,6 +60,14 @@ class Vendor(Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
 
+class FinalClient(Base):
+    """End customers behind our clients (ADNOC, Seatrium…): the «Финальный клиент» of a request."""
+    __tablename__ = "final_clients"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), unique=True)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+
 class PaymentMethod(Base):
     __tablename__ = "payment_methods"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -78,7 +86,9 @@ class Client(Base, TimestampMixin, SoftDelete):
     state: Mapped[str | None] = mapped_column(String(60))  # Indian state, for CGST+SGST vs IGST
     default_currency: Mapped[str] = mapped_column(String(3), default="USD")
     job_code: Mapped[str | None] = mapped_column(String(4))
-    color: Mapped[str | None] = mapped_column(String(9))  # label colour in the Табель, #rrggbb  # KK in job number YY.KK-NNN; shared by e.g. all BV entities
+    color: Mapped[str | None] = mapped_column(String(9))  # label colour in the Табель, #rrggbb
+    address: Mapped[str | None] = mapped_column(Text)  # billing address printed on invoices
+    wht: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # client withholds WHT (5%)  # KK in job number YY.KK-NNN; shared by e.g. all BV entities
     contact_name: Mapped[str | None] = mapped_column(String(120))
     contact_email: Mapped[str | None] = mapped_column(String(200))
     notes: Mapped[str | None] = mapped_column(Text)
@@ -187,6 +197,7 @@ class JobLine(Base, TimestampMixin, SoftDelete):
     snap_fx: Mapped[Decimal | None] = mapped_column(Rate)
     snap_fx_insp: Mapped[Decimal | None] = mapped_column(Rate)
     snap_gst: Mapped[Decimal | None] = mapped_column(Rate)
+    snap_wht: Mapped[Decimal | None] = mapped_column(Rate)  # WHT rate applied when the month was closed (0 = none)
     snap_tds: Mapped[Decimal | None] = mapped_column(Rate)
     snap_admin: Mapped[Decimal | None] = mapped_column(Rate)
     snap_indian: Mapped[bool | None] = mapped_column(Boolean)

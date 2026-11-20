@@ -24,7 +24,7 @@ from app.migrate import upgrade
 from app.db import Base, SessionLocal, engine
 from app.directory import clean_country, clean_vendor, same_vendor, vendor_key
 from app.models import (AuditLog, Client, Country, FxRate, Inspector, InspectorInvoice, Job, JobLine, MonthClose,
-                        PaymentMethod, Request, SalesInvoice, Setting, TdsEntry, User, Vendor, inspector_invoice_jobs)
+                        FinalClient, PaymentMethod, Request, SalesInvoice, Setting, TdsEntry, User, Vendor, inspector_invoice_jobs)
 from app.routers.dashboard import region_of
 from app.routers.money import _sales_after
 from scripts.names import canonical_groups, same_person, tokens
@@ -202,8 +202,16 @@ class Importer:
                     methods[n][method_of(norm(d.get("Payment method")))] += 1
                     if norm(d.get("Country")):
                         countries[n][norm(d.get("Country"))] += 1
+        final_names = Counter()
+        if pnl:  # «Client Job Number / Client Name» in the old Табель mostly holds the end customer (ADNOC, BP, Seatrium…)
+            for m, g in pnl_rows(pnl):
+                fn = " ".join(re.sub(r"\([^)]*\d[^)]*\)", "", norm(g("client_job"))).split()).strip(" -–")  # drop "(ME010-NOI-018)"
+                if fn and not re.search(r"\d", fn) and not re.match(r"MV[\s_]", fn, re.I) and len(fn) > 1:
+                    final_names[fn] += 1
         if requests:
             for row in self._request_rows(requests):
+                if row["final"] and not re.fullmatch(r"[-—?.\s\d]*", row["final"]):
+                    final_names[" ".join(row["final"].split())] += 1
                 if row["client"]:
                     client_names[client_name(row["client"])] += 1
                 cn = clean_country(row["country"])
@@ -297,6 +305,16 @@ class Importer:
                                    notes=("Варианты написания: " + "; ".join(others))[:2000] if others else None))
         self.stats["vendors"] = len(groups)
         self.stats["vendor_spellings_merged"] = len(spell) - len(groups)
+        seen_final = {f.name.lower() for f in self.db.scalars(select(FinalClient))}
+        # spellings that differ only in case or spaces are one customer; the most frequent spelling wins
+        best: dict[str, str] = {}
+        for fn, n in final_names.most_common():
+            best.setdefault(re.sub(r"[\s.,-]+", "", fn.lower()), fn)
+        for fn in sorted(best.values(), key=str.lower):
+            if fn.lower() not in seen_final:
+                self.db.add(FinalClient(name=fn))
+                seen_final.add(fn.lower())
+        self.stats["final_clients"] = len(seen_final)
         for cn in sorted(country_names):
             if not self._existing(Country, cn):
                 self.db.add(Country(name=cn, region=region_of(cn, {})))
@@ -350,7 +368,7 @@ class Importer:
             if not jn:  # a few sheet lines have no job number: give them a visible placeholder
                 self.stats["no_job_number"] += 1
                 jn = f"БН-{m}-{self.stats['no_job_number']}"
-            status = norm(g("status")) or "Сдан"
+            status = norm(g("status")) or "Завершен"
             cur = {1: "USD", 2: "EUR"}.get(int(num(g("cur")) or 0), "USD")
             fx = num(g("fx"))
             if fx > 1:
@@ -362,13 +380,14 @@ class Importer:
                 country = self.country(g("country"))
                 job = Job(job_number=jn, client_id=client.id, country=country or None, vendor=self.vendor(g("vendor")),
                           client_contact=norm(g("contact"))[:120] or None, client_job_number=norm(g("client_job"))[:120] or None,
-                          owner_id=owner.id if owner else None, status="Сдан")
+                          owner_id=owner.id if owner else None, status="Завершен")
                 self.db.add(job)
                 self.db.flush()
                 self.jobs[jn] = job
                 self.stats["jobs"] += 1
-            if status in ("В работе", "Пауза") or (job.status == "Сдан" and m == max(self.months)):
-                job.status = status if status in ("В работе", "Пауза", "Сдан") else "Сдан"
+            status = "Завершен" if status == "Сдан" else status
+            if status in ("В работе", "Пауза") or (job.status == "Завершен" and m == max(self.months)):
+                job.status = status if status in ("В работе", "Пауза", "Завершен") else "Завершен"
             rate, cost = num(g("rate")), num(g("cost"))
             unit = "day"
             if Decimal(0) < rate < Decimal(50):
@@ -398,6 +417,7 @@ class Importer:
                 r = list(r) + [None] * 14
                 if china:
                     typ, d, cl, country, insp, pay, irate, fac, dates, st, notes = r[0], r[1], r[3], r[5], r[6], r[7], r[8], r[9], r[10], r[11], r[12]
+                    final = r[4]
                     if isinstance(d, dt.datetime):
                         rdate = d.date()
                     else:
@@ -405,9 +425,10 @@ class Importer:
                         rdate = dt.date(int(mm[3]), int(mm[2]), int(mm[1])) if mm else None
                 else:
                     typ, cl, country, insp, pay, irate, fac, dates, st, notes = r[0], r[1], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10]
+                    final = r[2]
                     m = SHEET_MONTH.get(key)
                     rdate = dt.date.fromisoformat(m + "-01") if m else None
-                yield dict(china=china, type=typ, date=rdate, client=norm(cl), country=country, inspector=norm(insp),
+                yield dict(china=china, type=typ, date=rdate, client=norm(cl), final=norm(final)[:200] or None, country=country, inspector=norm(insp),
                            pay=pay, irate=irate, factory=fac, dates=dates, status=REQ_STATUS.get(norm(st)), notes=notes)
 
     def requests(self, path: str):
@@ -431,7 +452,7 @@ class Importer:
             insp, note = self.inspector(q["inspector"]) if q["inspector"] else (None, None)
             country = self.country(q["country"])
             notes = "\n".join(x for x in [norm(q["notes"])[:2000], note or ""] if x) or None
-            self.db.add(Request(received_date=q["date"], type=t, client_id=client.id if client else None,
+            self.db.add(Request(received_date=q["date"], type=t, client_id=client.id if client else None, final_client=q["final"],
                                 country=country or None,
                                 factory=norm(q["factory"])[:300] or None, dates_text=(q["dates"].strftime("%d.%m.%Y") if isinstance(q["dates"], dt.datetime) else norm(q["dates"]))[:200] or None,
                                 client_rate=cr, client_currency=cc, inspector_rate=ir, inspector_currency=ic,
@@ -515,7 +536,7 @@ def reset(db):
     db.execute(delete(inspector_invoice_jobs))
     db.execute(JobLine.__table__.update().values(sales_invoice_id=None))
     for model in (TdsEntry, InspectorInvoice, JobLine, Request, SalesInvoice, Job, FxRate, MonthClose, Inspector, Client,
-                  Vendor, Country, AuditLog):
+                  Vendor, Country, FinalClient, AuditLog):
         db.execute(delete(model))
     db.execute(delete(Setting).where(Setting.key.like("jobseq:%")))
     db.commit()
@@ -539,14 +560,14 @@ def main():
         if not db.scalar(select(User).where(User.initials == "MB")):
             raise SystemExit("Сначала создайте пользователей: python -m scripts.create_admin")
         if a.refs_only:
-            count = lambda: {m.__tablename__: db.scalar(select(func.count()).select_from(m)) for m in (Inspector, Vendor, Country, Client)}
+            count = lambda: {m.__tablename__: db.scalar(select(func.count()).select_from(m)) for m in (Inspector, Vendor, Country, Client, FinalClient)}
             before = count()
             imp = Importer(db, set())
             imp.build_references(a.pnl, a.requests, a.sales, a.invoices)
             imp.relink_inspectors()
             db.commit()
             after = count()
-            names = {"inspectors": "инспекторов", "vendors": "заводов", "countries": "стран", "clients": "клиентов"}
+            names = {"inspectors": "инспекторов", "vendors": "заводов", "countries": "стран", "clients": "клиентов", "final_clients": "фин. клиентов"}
             for k in before:
                 print(f"{names[k]:12s} было {before[k]:4d}  стало {after[k]:4d}  (+{after[k] - before[k]})")
             print(f"{'строк и заявок, где восстановлен инспектор':44s} {imp.stats['inspectors_relinked']}")

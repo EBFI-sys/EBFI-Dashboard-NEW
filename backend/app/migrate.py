@@ -3,6 +3,10 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 STEPS = [
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS address TEXT",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS wht BOOLEAN NOT NULL DEFAULT false",
+    "ALTER TABLE job_lines ADD COLUMN IF NOT EXISTS snap_wht NUMERIC(12, 4)",
+    "UPDATE jobs SET status = 'Завершен' WHERE status = 'Сдан'",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS color VARCHAR(9)",
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS color VARCHAR(9)",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS job_code VARCHAR(4)",

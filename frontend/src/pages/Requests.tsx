@@ -24,7 +24,8 @@ export default function Requests() {
     { key: "received_date", label: "Дата получения", type: "date" },
     { key: "type", label: "Тип", type: "select", options: ["Inspection", "Audit", "Expediting"], required: true, optional: true },
     { key: "client_id", label: "Клиент", type: "ref", ref: "clients", required: true },
-    { key: "final_client", label: "Конечный клиент", list: false },
+    { key: "final_client", label: "Финальный клиент", type: "suggest", ref: "final-clients", optional: true,
+      hint: "Начните вводить — подскажет из справочника; новый добавится сам" },
     { key: "country", label: "Страна", type: "suggest", ref: "countries", required: true },
     { key: "factory", label: "Завод / адрес", type: "suggest", ref: "vendors", wide: true },
     { key: "dates_text", label: "Даты", type: "dates" },
@@ -32,7 +33,7 @@ export default function Requests() {
     { key: "client_currency", label: "Валюта клиента", type: "select", options: CURRENCIES, list: false },
     { key: "inspector_rate", label: "Ставка инспектора", type: "money", currencyKey: "inspector_currency", optional: true },
     { key: "inspector_currency", label: "Валюта инспектора", type: "select", options: CURRENCIES, list: false },
-    { key: "inspector_ids", label: "Инспекторы (отправлены CV)", type: "multiref", ref: "inspectors", wide: true,
+    { key: "inspector_ids", label: "Инспектор (отправлены CV)", type: "multiref", ref: "inspectors", wide: true,
       hint: "Отметьте всех, чьи CV отправлены клиенту. При переносе в Табель выберете, кто поедет.",
       render: (r) => <InspectorNames ids={r.inspector_ids} />, text: (r) => (r.inspector_ids ?? []).map(nameOf).join(", ") || null },
     { key: "status", label: "Статус", type: "status", options: REQ_STATUSES, required: true },
@@ -107,7 +108,7 @@ function CreateJob({ req, onClose, onDone }: { req: any; onClose: () => void; on
         </label>
         <div className="field wide">
           <span>Кто поедет на инспекцию</span>
-          {cands.length === 0 ? <small>В заявке не выбраны инспекторы — укажете в карточке работы.</small> : (
+          {cands.length === 0 ? <small>В заявке не выбран инспектор — укажете его в карточке работы.</small> : (
             <div className="pick-list">
               {cands.map((id) => (
                 <label key={id} className="check">
@@ -121,7 +122,7 @@ function CreateJob({ req, onClose, onDone }: { req: any; onClose: () => void; on
         <div className="transfer wide">
           <p className="muted small">Перенесётся в работу:</p>
           <dl>
-            <dt>Клиент</dt><dd>{client?.name ?? "—"}{req.final_client ? ` · конечный клиент ${req.final_client}` : ""}</dd>
+            <dt>Клиент</dt><dd>{client?.name ?? "—"}{req.final_client ? ` · финальный клиент ${req.final_client}` : ""}</dd>
             <dt>Завод</dt><dd>{req.factory ?? "—"}</dd>
             <dt>Страна</dt><dd>{req.country ?? "—"}</dd>
             <dt>Даты</dt><dd>{req.dates_text ?? "—"}</dd>

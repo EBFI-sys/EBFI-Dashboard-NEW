@@ -221,22 +221,22 @@ export default function JobCard() {
       </div>
 
       <section className="card">
-        <h2>Как работа попадает в P&amp;L по месяцам</h2>
+        <h2>Как работа попадает в финансовые результаты по месяцам</h2>
         <DataTable rows={j.lines} cols={monthCols} filters={false} empty="Пока пусто." />
         <p className="muted small">Считается автоматически из дат и ставок выше. Если даты идут через два месяца, работа делится между ними по дням.</p>
       </section>
 
       <div className="grid2">
         <section className="card">
-          <h2>Инвойсы клиенту</h2>
-          {j.sales_invoices.length === 0 ? <p className="muted">Нет. Создайте инвойс на странице «Инвойсы клиентам» → «Инвойс из работ».</p> : (
+          <h2>Исходящие счета</h2>
+          {j.sales_invoices.length === 0 ? <p className="muted">Нет. Создайте счёт в «Реестре исходящих счетов» → «Инвойс из работ».</p> : (
             <table><tbody>{j.sales_invoices.map((s: any) => (
               <tr key={s.id}><td className="mono">{s.number}</td><td>{dateLabel(s.date)}</td><td className="r">{money(s.amount, s.currency)}</td><td><Pill status={s.status} /></td></tr>
             ))}</tbody></table>
           )}
         </section>
         <section className="card">
-          <h2>Счета инспекторов</h2>
+          <h2>Входящие счета</h2>
           {j.inspector_invoices.length === 0 ? <p className="muted">Нет привязанных счетов.</p> : (
             <table><tbody>{j.inspector_invoices.map((s: any) => (
               <tr key={s.id}><td>{s.number ?? "—"}</td><td>{dateLabel(s.invoice_date)}</td><td className="r">{money(s.amount, s.currency)}</td><td><Pill status={s.paid ? "Оплачено" : "К оплате"} /></td></tr>
@@ -284,9 +284,9 @@ function RemoveJob({ job, mode, onClose, onDone }: { job: any; mode: "request" |
   return (
     <Modal title={mode === "delete" ? `Удалить работу ${job.job_number}?` : `Вернуть ${job.job_number} в заявки?`} onClose={onClose}>
       {mode === "delete" ? (
-        <p>Работа исчезнет из Табеля, P&amp;L и дашборда. Если она пришла из заявки, заявка останется, и её можно будет перенести снова.</p>
+        <p>Работа исчезнет из Табеля, финансовых результатов и дашборда. Если она пришла из заявки, заявка останется, и её можно будет перенести снова.</p>
       ) : (
-        <p>Работа уйдёт из Табеля, а заявка снова станет «В процессе» со всеми данными: клиент, завод, страна, даты, ставки, инспекторы.
+        <p>Работа уйдёт из Табеля, а заявка снова станет «В процессе» со всеми данными: клиент, завод, страна, даты, ставки, инспектор.
           Если работа была открыта без заявки, заявка создастся.</p>
       )}
       <p className="muted">Номер <b className="mono">{job.job_number}</b> останется использованным: в очереди номеров его больше не будет. При новом переносе работа получит следующий свободный номер.</p>
