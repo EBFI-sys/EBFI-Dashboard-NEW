@@ -15,9 +15,9 @@ COOKIE = "ebfi_session"
 
 # What each role may do. Managers see margins and may record payments (decision of 18 Nov 2026).
 ROLE_RIGHTS = {
-    "admin": {"read", "write", "settings", "close_month", "users", "delete"},
-    "accountant": {"read", "write", "settings", "close_month"},
-    "manager": {"read", "write"},
+    "admin": {"read", "write", "settings", "close_month", "users", "delete", "delete_work"},
+    "accountant": {"read", "write", "settings", "close_month", "delete_work"},
+    "manager": {"read", "write", "delete_work"},  # managers may delete requests and jobs (decision of 20 Nov 2026)
 }
 
 

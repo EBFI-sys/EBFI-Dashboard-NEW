@@ -45,6 +45,7 @@ type Props = {
   periodDefault?: "current" | "all"; // open on the current month (India time) or on the whole period
   periodKey?: string; // date field to filter by period (month or custom range)
   columnFilters?: boolean; // Excel-style filters in column headers (default true)
+  deleteRight?: string; // right needed to delete a record (default "delete": admin only)
 };
 
 /** Indian financial year quarter: 2026-11-15 -> "Q3 FY27". */
@@ -380,7 +381,7 @@ export default function CrudTable(p: Props) {
       {edit && (
         <>
           <EditForm title={edit.id ? "Изменить" : "Новая запись"} fields={p.fields} initial={edit} onSave={save} onCancel={() => setEdit(null)} />
-          {edit.id && can("delete") && <DeleteBar onDelete={() => remove(edit)} />}
+          {edit.id && can(p.deleteRight ?? "delete") && <DeleteBar onDelete={() => remove(edit)} />}
         </>
       )}
       <Toast text={toast} onDone={() => setToast(null)} />

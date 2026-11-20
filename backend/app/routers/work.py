@@ -39,7 +39,8 @@ def _req_save(o: Request, data, db, user, created):
 
 
 r.include_router(make_crud(Request, "/requests", order_by=[Request.received_date.desc().nulls_last(), Request.id.desc()],
-                           search=["factory", "country", "final_client", "notes"], before_save=_req_save))
+                           search=["factory", "country", "final_client", "notes"], before_save=_req_save,
+                           delete_right="delete_work"))
 
 
 @r.get("/request-statuses")
@@ -238,7 +239,7 @@ def _drop(job: Job, lines: list[JobLine]):
 
 
 @r.delete("/jobs/{jid}")
-def delete_job(jid: int, db: Session = Depends(get_db), _=Depends(need("delete"))):
+def delete_job(jid: int, db: Session = Depends(get_db), _=Depends(need("delete_work"))):
     job = db.get(Job, jid)
     if not job or job.deleted:
         raise HTTPException(404, "Работа не найдена")
@@ -344,7 +345,7 @@ def update_line(lid: int, data: dict, db: Session = Depends(get_db), _=Depends(n
 
 
 @r.delete("/lines/{lid}")
-def delete_line(lid: int, db: Session = Depends(get_db), _=Depends(need("delete"))):
+def delete_line(lid: int, db: Session = Depends(get_db), _=Depends(need("delete_work"))):
     line = db.get(JobLine, lid)
     if not line:
         raise HTTPException(404, "Строка не найдена")
@@ -506,7 +507,7 @@ def add_assignment(jid: int, data: dict, db: Session = Depends(get_db), _=Depend
 
 
 @r.delete("/jobs/{jid}/assignments/{grp}")
-def delete_assignment(jid: int, grp: int, db: Session = Depends(get_db), _=Depends(need("delete"))):
+def delete_assignment(jid: int, grp: int, db: Session = Depends(get_db), _=Depends(need("delete_work"))):
     job = db.get(Job, jid)
     if not job:
         raise HTTPException(404, "Работа не найдена")

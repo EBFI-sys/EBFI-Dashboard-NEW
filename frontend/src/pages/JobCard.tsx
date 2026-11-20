@@ -185,7 +185,7 @@ export default function JobCard() {
           <CurrencySwitch />
           {can("write") && <button className="btn" onClick={() => setEditJob(true)}>Изменить данные работы</button>}
           {can("write") && <button className="btn ghost" onClick={() => setRemove("request")}>Вернуть в заявки</button>}
-          {can("delete") && <button className="btn ghost danger-text" onClick={() => setRemove("delete")}>Удалить</button>}
+          {can("delete_work") && <button className="btn ghost danger-text" onClick={() => setRemove("delete")}>Удалить</button>}
         </div>
       </header>
 
@@ -210,7 +210,7 @@ export default function JobCard() {
         <ErrorLine error={err} />
         {j.assignments.length === 0 && <p className="muted">Нет данных. Нажмите «+ Ещё инспектор», чтобы указать инспектора, даты и ставки.</p>}
         {j.assignments.map((a: any) => (
-          <Assignment key={a.grp} job={j} a={a} canWrite={can("write")} canDelete={can("delete") && j.assignments.length > 1} onSaved={saved} />
+          <Assignment key={a.grp} job={j} a={a} canWrite={can("write")} canDelete={can("delete_work") && j.assignments.length > 1} onSaved={saved} />
         ))}
       </section>
 

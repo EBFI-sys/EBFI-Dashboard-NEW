@@ -63,7 +63,7 @@ def apply(obj, data: dict, extra_readonly: set[str] = frozenset()):
 def make_crud(model, prefix: str, *, order_by=None, search: list[str] = (), hide: set[str] = frozenset(),
               readonly: set[str] = frozenset(), write_right: str = "write",
               serialize: Callable | None = None, before_save: Callable | None = None,
-              after_save: Callable | None = None) -> APIRouter:
+              after_save: Callable | None = None, delete_right: str = "delete") -> APIRouter:
     r = APIRouter(prefix=prefix)
     ser = serialize or (lambda o, db: to_dict(o, hide))
     has_deleted = hasattr(model, "deleted")
@@ -120,7 +120,7 @@ def make_crud(model, prefix: str, *, order_by=None, search: list[str] = (), hide
         return ser(obj, db)
 
     @r.delete("/{item_id}")
-    def delete(item_id: int, db: Session = Depends(get_db), user: User = Depends(need("delete"))):
+    def delete(item_id: int, db: Session = Depends(get_db), user: User = Depends(need(delete_right))):
         obj = db.get(model, item_id)
         if not obj:
             raise HTTPException(404, "Не найдено")

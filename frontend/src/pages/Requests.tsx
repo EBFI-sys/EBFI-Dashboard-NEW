@@ -52,6 +52,7 @@ export default function Requests() {
         periodKey="received_date"
         periodLabel="Месяц получения"
         periodDefault="current"
+        deleteRight="delete_work"
         defaults={{ status: "В процессе", type: "Inspection", received_date: today(), client_currency: "USD", inspector_currency: "USD", inspector_ids: [] }}
         filter={(r) => show === "all" || (show === "open" ? !CLOSED.includes(r.status) : CLOSED.includes(r.status))}
         toolbar={() => (
