@@ -1,29 +1,84 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+/** Is the page this component lives on the one on screen? Pages stay alive in the background (see main.tsx). */
+export const ActiveCtx = createContext(true);
+export const PageCtx = createContext<{ path: string; label: string }>({ path: "/", label: "" });
+
+type TrayItem = { id: string; title: string; path: string; label: string; restore: () => void; close: () => void };
+type Tray = { items: TrayItem[]; put: (t: TrayItem) => void; drop: (id: string) => void };
+export const TrayCtx = createContext<Tray>({ items: [], put: () => undefined, drop: () => undefined });
+
+export function TrayProvider({ children }: { children: React.ReactNode }) {
+  const [items, setItems] = useState<TrayItem[]>([]);
+  const put = useCallback((t: TrayItem) => setItems((xs) => [...xs.filter((x) => x.id !== t.id), t]), []);
+  const drop = useCallback((id: string) => setItems((xs) => xs.filter((x) => x.id !== id)), []);
+  return <TrayCtx.Provider value={{ items, put, drop }}>{children}</TrayCtx.Provider>;
+}
+
+/** Dialogs. A click beside the window, Esc or «_» folds it into the tray at the bottom of the screen with everything
+ *  typed in it kept; the tray brings it back, even after looking at other sections. Only «×» or «Отмена» close it. */
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+  const id = useId();
+  const [min, setMin] = useState(false);
+  const active = useContext(ActiveCtx);
+  const page = useContext(PageCtx);
+  const tray = useContext(TrayCtx);
+  const shown = !min && active;
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
-    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    if (!shown) return;
+    const k = (e: KeyboardEvent) => e.key === "Escape" && setMin(true);
     window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
-  }, [onClose]);
-  useEffect(() => {
     // keep the page behind still while a dialog is open
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
-  }, []);
+    return () => {
+      window.removeEventListener("keydown", k);
+      document.body.style.overflow = prev;
+    };
+  }, [shown]);
+  useEffect(() => {
+    if (min) tray.put({ id, title, path: page.path, label: page.label, restore: () => setMin(false), close: () => closeRef.current() });
+    else tray.drop(id);
+  }, [min, title, page.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => tray.drop(id), []); // eslint-disable-line react-hooks/exhaustive-deps
   // rendered into <body>: glass panels create their own stacking context, so a dialog inside them would be placed
-  // relative to the panel instead of the screen
+  // relative to the panel instead of the screen. While folded it stays mounted (hidden), so nothing typed is lost.
   return createPortal(
-    <div className="modal-back" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={"modal-back" + (shown ? "" : " folded")} onMouseDown={(e) => e.target === e.currentTarget && setMin(true)}>
       <div className={"modal" + (wide ? " wide" : "")} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-head">
           <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Закрыть">×</button>
+          <div className="modal-tools">
+            <button className="icon-btn small" onClick={() => setMin(true)} aria-label="Свернуть" title="Свернуть в трей — данные сохранятся">–</button>
+            <button className="icon-btn" onClick={onClose} aria-label="Закрыть" title="Закрыть">×</button>
+          </div>
         </div>
         <div className="modal-body">{children}</div>
       </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** Folded dialogs, bottom right on every page. */
+export function TrayBar({ go }: { go: (path: string) => void }) {
+  const { items } = useContext(TrayCtx);
+  if (!items.length) return null;
+  return createPortal(
+    <div className="tray" role="region" aria-label="Свёрнутые окна">
+      {items.map((t) => (
+        <div key={t.id} className="tray-item">
+          <button type="button" className="tray-open" onClick={() => { go(t.path); t.restore(); }} title="Развернуть">
+            <span className="tray-dot" />
+            <span className="tray-title">{t.title}</span>
+            {t.label && <span className="tray-page">{t.label}</span>}
+          </button>
+          <button type="button" className="tray-x" aria-label="Закрыть окно без сохранения" title="Закрыть без сохранения" onClick={t.close}>×</button>
+        </div>
+      ))}
     </div>,
     document.body,
   );
@@ -103,6 +158,13 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
+  // a page kept in the background refreshes its data when the user comes back to it
+  const active = useContext(ActiveCtx);
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (active && !wasActive.current) setTick((t) => t + 1);
+    wasActive.current = active;
+  }, [active]);
   useEffect(() => {
     let live = true;
     setLoading(true);

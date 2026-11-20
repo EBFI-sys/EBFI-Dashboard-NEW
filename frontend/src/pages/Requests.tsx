@@ -63,7 +63,7 @@ export default function Requests() {
         )}
         rowActions={(r, reload) =>
           r.job_id ? <Link className="btn small ghost" to={`/jobs/${r.job_id}`}>В табеле</Link>
-            : !CLOSED.includes(r.status) && <button className="btn small" title="Перенести заявку в Табель" onClick={() => setMk({ r, reload })}>В Табель →</button>
+            : r.status !== "Отмена" && <button className="btn small" title="Перенести заявку в Табель" onClick={() => setMk({ r, reload })}>В Табель →</button>
         }
       />
       {mk && <CreateJob req={mk.r} onClose={() => setMk(null)} onDone={mk.reload} />}

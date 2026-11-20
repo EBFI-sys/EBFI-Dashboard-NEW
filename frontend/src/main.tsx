@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { ActiveCtx, PageCtx, TrayBar, TrayCtx, TrayProvider } from "./components/ui";
 import { Clock, Moon, Sun, BookOpen, CalendarRange, FileText, Gauge, History, Inbox, Landmark, LineChart, UserCog, Wallet } from "lucide-react";
 import { AuthProvider, useAuth } from "./auth";
 import { CurrencyProvider } from "./currency";
@@ -73,6 +74,58 @@ function IstClock() {
   );
 }
 
+const PAGES: [string, React.ReactNode][] = [
+  ["/", <Dashboard />], ["/requests", <Requests />], ["/jobs", <Jobs />], ["/jobs/:id", <JobCard />], ["/pnl", <Pnl />],
+  ["/sales", <Sales />], ["/payouts", <Payouts />], ["/tds", <Tds />], ["/references", <References />], ["/audit", <Audit />],
+  ["/users", <Users />], ["/profile", <Profile />],
+];
+const LABEL: Record<string, string> = {
+  "/": "Дашборд", "/requests": "Заявки", "/jobs": "Табель", "/pnl": "P&L", "/sales": "Инвойсы клиентам", "/payouts": "Счета инспекторов",
+  "/tds": "Реестр TDS", "/references": "Справочники", "/audit": "Журнал", "/users": "Пользователи", "/profile": "Профиль",
+};
+
+function NotFound() {
+  const active = React.useContext(ActiveCtx);
+  return active ? <Navigate to="/" /> : null;
+}
+
+/** Pages stay alive in the background after you leave them (the last 10, and any with a folded dialog), so a half-filled
+ *  form in the tray is still there when you come back. A page refreshes its data each time it comes on screen again. */
+function KeepAlive() {
+  const loc = useLocation();
+  const nav = useNavigate();
+  const { items } = React.useContext(TrayCtx);
+  const cur = loc.pathname;
+  const [order, setOrder] = React.useState<string[]>([cur]);
+  React.useEffect(() => {
+    setOrder((o) => {
+      const pinned = new Set(items.map((t) => t.path));
+      const next = [cur, ...o.filter((p) => p !== cur)];
+      return next.filter((p, i) => i < 10 || pinned.has(p));
+    });
+  }, [cur, items]);
+  const paths = order.includes(cur) ? order : [cur, ...order];
+  // stable render order, so React keeps every page's state while the visit order changes
+  const sorted = [...paths].sort();
+  return (
+    <>
+      {sorted.map((p) => (
+        <div key={p} hidden={p !== cur} className="page-slot">
+          <ActiveCtx.Provider value={p === cur}>
+            <PageCtx.Provider value={{ path: p, label: LABEL[p] ?? (p.startsWith("/jobs/") ? "Карточка работы" : "") }}>
+              <Routes location={p}>
+                {PAGES.map(([path, el]) => <Route key={path} path={path} element={el} />)}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </PageCtx.Provider>
+          </ActiveCtx.Provider>
+        </div>
+      ))}
+      <TrayBar go={(p) => p !== cur && nav(p)} />
+    </>
+  );
+}
+
 function Shell() {
   const { me, loading, logout, can } = useAuth();
   if (loading) return <div className="center muted">Загрузка…</div>;
@@ -113,21 +166,7 @@ function Shell() {
             <NavLink to="/profile">Включить в профиле</NavLink>
           </div>
         )}
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/requests" element={<Requests />} />
-          <Route path="/jobs" element={<Jobs />} />
-          <Route path="/jobs/:id" element={<JobCard />} />
-          <Route path="/pnl" element={<Pnl />} />
-          <Route path="/sales" element={<Sales />} />
-          <Route path="/payouts" element={<Payouts />} />
-          <Route path="/tds" element={<Tds />} />
-          <Route path="/references" element={<References />} />
-          <Route path="/audit" element={<Audit />} />
-          <Route path="/users" element={<Users />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="*" element={<Navigate to="/" />} />
-        </Routes>
+        <KeepAlive />
       </main>
     </div>
   );
@@ -137,9 +176,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <AuthProvider>
       <CurrencyProvider>
-        <BrowserRouter>
-          <Shell />
-        </BrowserRouter>
+        <TrayProvider>
+          <BrowserRouter>
+            <Shell />
+          </BrowserRouter>
+        </TrayProvider>
       </CurrencyProvider>
     </AuthProvider>
   </React.StrictMode>,

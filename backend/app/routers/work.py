@@ -56,6 +56,8 @@ def create_job_from_request(rid: int, data: dict, db: Session = Depends(get_db),
         raise HTTPException(404, "Заявка не найдена")
     if req.job_id:
         raise HTTPException(400, "По этой заявке уже есть работа")
+    if req.status == "Отмена":
+        raise HTTPException(400, "Отменённую заявку нельзя перенести в Табель")
     if not req.client_id:
         raise HTTPException(422, "В заявке не указан клиент")
     number = (data.get("job_number") or "").strip() or next_job_number(db, req.client_id)
@@ -76,7 +78,8 @@ def create_job_from_request(rid: int, data: dict, db: Session = Depends(get_db),
     for g, iid in enumerate(inspectors or [None], start=1):
         sync_assignment(db, job, g, {**base, "inspector_id": iid}, strict=False)
     req.job_id = job.id
-    req.status = "Принято в работу"
+    if req.status != "Выполнено":
+        req.status = "Принято в работу"
     if len(inspectors) == 1:
         req.inspector_id = inspectors[0]
     _commit(db)
@@ -213,14 +216,67 @@ def update_job(jid: int, data: dict, db: Session = Depends(get_db), _=Depends(ne
     return job_dict(job, db, Context(db))
 
 
+def _removable(job: Job, db: Session):
+    """A job can leave the Табель only while nothing depends on it."""
+    closed = {m.month for m in db.scalars(select(MonthClose))}
+    lines = [l for l in job.lines if not l.deleted]
+    if any(l.month in closed for l in lines):
+        raise HTTPException(400, "Есть строки в закрытом месяце — работу нельзя удалить")
+    if any(l.sales_invoice_id for l in lines):
+        raise HTTPException(400, "Работа уже включена в инвойс клиенту — сначала уберите её из инвойса")
+    if db.scalar(select(inspector_invoice_jobs.c.inspector_invoice_id).join(InspectorInvoice)
+                 .where(inspector_invoice_jobs.c.job_id == job.id, InspectorInvoice.deleted.is_(False)).limit(1)):
+        raise HTTPException(400, "К работе привязан счёт инспектора — сначала отвяжите его")
+    return lines
+
+
+def _drop(job: Job, lines: list[JobLine]):
+    # the job number stays taken: deleted jobs keep it, so the queue never hands it out again
+    job.deleted = True
+    for l in lines:
+        l.deleted = True
+
+
 @r.delete("/jobs/{jid}")
 def delete_job(jid: int, db: Session = Depends(get_db), _=Depends(need("delete"))):
     job = db.get(Job, jid)
-    if not job:
+    if not job or job.deleted:
         raise HTTPException(404, "Работа не найдена")
-    job.deleted = True
+    lines = _removable(job, db)
+    for req in db.scalars(select(Request).where(Request.job_id == job.id)):
+        req.job_id = None
+        req.notes = "\n".join(x for x in [req.notes, f"Работа {job.job_number} удалена из Табеля"] if x)
+    _drop(job, lines)
     _commit(db)
     return {"ok": True}
+
+
+@r.post("/jobs/{jid}/to-request")
+def job_to_request(jid: int, db: Session = Depends(get_db), user: User = Depends(need("write"))):
+    """Take a job out of the Табель and put it back to the requests. The request it came from is reopened;
+    a job opened without a request gets a new request with everything that was entered."""
+    job = db.get(Job, jid)
+    if not job or job.deleted:
+        raise HTTPException(404, "Работа не найдена")
+    lines = _removable(job, db)
+    req = db.scalar(select(Request).where(Request.job_id == job.id, Request.deleted.is_(False)))
+    note = f"Возвращена из Табеля (была работа {job.job_number})"
+    if not req:
+        a = (assignments(job, db, Context(db)) or [{}])[0]
+        ids = [x["inspector_id"] for x in assignments(job, db, Context(db)) if x.get("inspector_id")]
+        req = Request(received_date=clock.today(), type="Inspection", client_id=job.client_id, country=job.country,
+                      factory=job.vendor, dates_text=a.get("dates_text"), client_rate=a.get("client_rate"),
+                      client_currency=a.get("currency"), inspector_rate=a.get("inspector_rate"),
+                      inspector_currency=a.get("inspector_currency"), inspector_ids=ids or None,
+                      inspector_id=ids[0] if len(ids) == 1 else None, owner_id=job.owner_id or user.id,
+                      notes=job.notes)
+        db.add(req)
+    req.job_id = None
+    req.status = "В процессе"
+    req.notes = "\n".join(x for x in [req.notes, note] if x)
+    _drop(job, lines)
+    _commit(db)
+    return {"ok": True, "request_id": req.id}
 
 
 # ---------------------------------------------------------------- job lines

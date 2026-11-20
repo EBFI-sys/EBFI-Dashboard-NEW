@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, dateLabel, money, monthLabel, num, pct } from "../api";
 import { useAuth } from "../auth";
 import { ClientChip, OwnerChip } from "../components/Chips";
 import { EditForm, Field, FieldInput } from "../components/CrudTable";
 import DataTable, { Col } from "../components/DataTable";
-import { ErrorLine, Pill, Toast, useAsync } from "../components/ui";
+import { ErrorLine, Modal, Pill, Toast, useAsync } from "../components/ui";
 import { CurrencySwitch, useCurrency } from "../currency";
 import { CURRENCIES } from "../refs";
 import { jobFields } from "./Jobs";
@@ -33,7 +33,7 @@ function Assignment({ job, a, canWrite, canDelete, onSaved }: { job: any; a: any
   const [d, setD] = useState<any>(a);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => setD(a), [a]);
+  useEffect(() => setD(a), [JSON.stringify(a)]); // eslint-disable-line react-hooks/exhaustive-deps
   const dirty = JSON.stringify(d) !== JSON.stringify(a);
   const set = (k: string) => (v: any) => setD((x: any) => ({ ...x, [k]: v, ...(k === "dates_text" ? { quantity: null } : {}) }));
   const field = (f: Field, extra?: string) => (
@@ -127,6 +127,8 @@ export default function JobCard() {
   const [j, setJ] = useState<any | null>(null);
   useEffect(() => setJ(j0), [j0]);
   const [editJob, setEditJob] = useState(false);
+  const [remove, setRemove] = useState<null | "request" | "delete">(null);
+  const nav = useNavigate();
   const [toast, setToast] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const { cur, conv, fmt } = useCurrency();
@@ -182,6 +184,8 @@ export default function JobCard() {
         <div className="head-actions">
           <CurrencySwitch />
           {can("write") && <button className="btn" onClick={() => setEditJob(true)}>Изменить данные работы</button>}
+          {can("write") && <button className="btn ghost" onClick={() => setRemove("request")}>Вернуть в заявки</button>}
+          {can("delete") && <button className="btn ghost danger-text" onClick={() => setRemove("delete")}>Удалить</button>}
         </div>
       </header>
 
@@ -256,7 +260,43 @@ export default function JobCard() {
           const body = Object.fromEntries(Object.entries(d).filter(([k]) => !["lines", "assignments", "totals", "totals_by_month", "line_summary", "dates", "months", "sales_invoices", "inspector_invoices"].includes(k)));
           await api.patch(`/jobs/${j.id}`, body); setEditJob(false); setToast("Сохранено"); reload();
         }} />}
+      {remove && <RemoveJob job={j} mode={remove} onClose={() => setRemove(null)} onDone={(to) => nav(to)} />}
       <Toast text={toast} onDone={() => setToast(null)} />
     </div>
+  );
+}
+
+function RemoveJob({ job, mode, onClose, onDone }: { job: any; mode: "request" | "delete"; onClose: () => void; onDone: (to: string) => void }) {
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      if (mode === "delete") await api.del(`/jobs/${job.id}`);
+      else await api.post(`/jobs/${job.id}/to-request`);
+      onDone(mode === "delete" ? "/jobs" : "/requests");
+    } catch (e: any) {
+      setErr(e.message);
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal title={mode === "delete" ? `Удалить работу ${job.job_number}?` : `Вернуть ${job.job_number} в заявки?`} onClose={onClose}>
+      {mode === "delete" ? (
+        <p>Работа исчезнет из Табеля, P&amp;L и дашборда. Если она пришла из заявки, заявка останется, и её можно будет перенести снова.</p>
+      ) : (
+        <p>Работа уйдёт из Табеля, а заявка снова станет «В процессе» со всеми данными: клиент, завод, страна, даты, ставки, инспекторы.
+          Если работа была открыта без заявки, заявка создастся.</p>
+      )}
+      <p className="muted">Номер <b className="mono">{job.job_number}</b> останется использованным: в очереди номеров его больше не будет. При новом переносе работа получит следующий свободный номер.</p>
+      <ErrorLine error={err} />
+      <div className="form-actions">
+        <button className="btn ghost" onClick={onClose}>Отмена</button>
+        <button className={"btn " + (mode === "delete" ? "danger" : "primary")} disabled={busy} onClick={go}>
+          {busy ? "…" : mode === "delete" ? "Удалить работу" : "Вернуть в заявки"}
+        </button>
+      </div>
+    </Modal>
   );
 }
