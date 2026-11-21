@@ -15,7 +15,7 @@ const clientFields: Field[] = [
   { key: "legal_name", label: "Полное юр. название", wide: true },
   { key: "address", label: "Адрес для инвойса", type: "textarea", list: false, hint: "Юридический адрес клиента — как он будет напечатан в инвойсе" },
   { key: "is_indian", label: "Клиент из Индии (GST и TDS)", type: "bool" },
-  { key: "wht", label: "Удерживает WHT 5% (на счёт приходит сумма минус WHT)", type: "bool" },
+  { key: "wht", label: "Удерживает WHT 5% (вычитается при оплате и уменьшает прибыль)", type: "bool" },
   { key: "gstin", label: "GSTIN" },
   { key: "state", label: "Штат (для CGST/SGST или IGST)" },
   { key: "default_currency", label: "Валюта по умолчанию", type: "select", options: CURRENCIES },
@@ -88,7 +88,7 @@ function TaxSettings() {
   const [toast, setToast] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   if (!data) return <ErrorLine error={error} />;
-  const L: Record<string, string> = { gst_rate: "GST (доля, 0.18 = 18%)", tds_rate: "TDS (доля, 0.10 = 10%)", admin_rate: "Админка (доля от B, 0.18 = 18%)", company_state: "Штат EBFI Privat Limited", wht_rate: "WHT (доля, 0.05 = 5%) — для клиентов с отметкой «Удерживает WHT»", sales_invoice_last: "Автонумерация инвойсов: последний выданный номер (NNN). Пусто — номера вводятся вручную" };
+  const L: Record<string, string> = { gst_rate: "GST (доля, 0.18 = 18%)", tds_rate: "TDS (доля, 0.10 = 10%)", admin_rate: "Админка (доля от B, 0.18 = 18%)", company_state: "Штат EBFI Privat Limited", wht_rate: "WHT (доля, 0.05 = 5%) — потеря по клиентам с отметкой «Удерживает WHT»", sales_invoice_last: "Автонумерация инвойсов: последний выданный номер (NNN). Пусто — номера вводятся вручную" };
   return (
     <section className="card narrow">
       <h2>Ставки налогов и нумерация</h2>

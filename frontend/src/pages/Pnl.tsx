@@ -7,7 +7,7 @@ import { ErrorLine, Pill, Toast, useAsync } from "../components/ui";
 import { CurrencySwitch, useCurrency } from "../currency";
 
 const MONEY = ["base_inr", "gst_inr", "tds_inr", "wht_inr", "cash_in_inr", "admin_inr", "cost_inr", "rko_inr", "net_inr"] as const;
-const OPTIONAL_MONEY = new Set(["gst_inr", "tds_inr", "wht_inr", "cash_in_inr", "admin_inr", "rko_inr"]);
+const OPTIONAL_MONEY = new Set(["gst_inr", "tds_inr", "cash_in_inr", "admin_inr", "rko_inr"]);
 const LABEL: Record<string, string> = {
   base_inr: "Выручка", gst_inr: "GST", tds_inr: "TDS", wht_inr: "WHT", cash_in_inr: "Приход", admin_inr: "Админка", cost_inr: "Подряд", rko_inr: "РКО", net_inr: "Прибыль",
 };

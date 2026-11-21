@@ -3,13 +3,13 @@
     B          = (quantity × client rate + client overtime) × FX            invoice base, INR
     GST        = B × gst_rate        (Indian clients only, pass-through, not revenue)
     TDS        = B × tds_rate        (Indian clients only, goes to the TDS register, not a cost)
-    WHT        = B × wht_rate        (clients marked «WHT», 5%: withheld by the client, not a cost either)
+    WHT        = B × wht_rate        (clients marked «WHT», 5%: the client keeps it when paying — a loss, credited nowhere)
     Cash in    = B + GST − TDS − WHT
     Admin      = B × admin_rate
     Contractor = (quantity × inspector rate + inspector overtime) × FX of the inspector currency
                  (the inspector may be paid in another currency than the client is billed in)
     RKO        = payment-method fee (0 until the payment-method list is filled)
-    Net profit = B − Admin − Contractor − RKO
+    Net profit = B − Admin − Contractor − RKO − WHT
     Margin     = Net profit ÷ B
 """
 from dataclasses import dataclass
@@ -123,7 +123,7 @@ def compute_line(line: JobLine, job: Job, ctx: Context) -> dict:
     else:
         pm = ctx.methods.get(line.payment_method_id) if line.payment_method_id else None
         rko = (sub * Decimal(pm.rko_percent or 0) / 100 + Decimal(pm.rko_fixed_inr or 0)) if pm and sub else D0
-    net = b - admin - sub - rko
+    net = b - admin - sub - rko - wht
     out.update(
         base_inr=_f(b), gst_inr=_f(gst), tds_inr=_f(tds), wht_inr=_f(wht), cash_in_inr=_f(b + gst - tds - wht),
         admin_inr=_f(admin), cost_inr=_f(sub), rko_inr=_f(rko), net_inr=_f(net),

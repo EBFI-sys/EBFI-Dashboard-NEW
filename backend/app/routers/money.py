@@ -86,7 +86,7 @@ def _sales_ser(o: SalesInvoice, db: Session):
     c = db.get(Client, o.client_id)
     d["client_name"] = c.name if c else None
     d["gst_total"] = float((o.cgst or 0) + (o.sgst or 0) + (o.igst or 0))
-    # WHT the client withholds (5%), in the invoice currency; it is not our loss, the client pays it to the tax office
+    # WHT the client keeps when paying (5%), in the invoice currency: it is not credited anywhere, so it is our loss
     d["wht"] = float(Decimal(o.amount) * Decimal(get_setting(db, "wht_rate"))) if c and c.wht else 0.0
     d["outstanding"] = float(Decimal(o.amount) - Decimal(o.received_amount or 0)) if o.status != "Paid" else 0.0
     d["line_ids"] = [l.id for l in db.scalars(select(JobLine).where(JobLine.sales_invoice_id == o.id))]
