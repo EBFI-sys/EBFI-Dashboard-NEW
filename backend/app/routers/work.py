@@ -115,6 +115,7 @@ def next_job_number(db: Session, client_id: int) -> str:
                                  "Укажите его в «Справочники → Клиенты» или введите Job number вручную.")
     code, yy = client.job_code.zfill(2), f"{clock.today():%y}"
     seq, width = last_seq(db, yy, code)
+    seq = max(seq, files.server_max(yy, code))  # folders created by hand on OneDrive take their numbers too
     return f"{yy}.{code}-{seq + 1:0{width}d}"
 
 

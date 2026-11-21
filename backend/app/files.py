@@ -127,6 +127,29 @@ def upload_outgoing(db: Session, inv: SalesInvoice, filename: str, content: byte
     return item
 
 
+def server_max(yy: str, code: str) -> int:
+    """Highest job number of this client code in Server 20YY, read live (folders made by hand count too)."""
+    if not sp.enabled():
+        return 0
+    try:
+        g = sp.graph()
+        year = g.item(f"{sp.settings.ms_root}/Server 20{yy}")
+        if not year:
+            return 0
+        best, prefix = 0, f"{yy}.{code}"
+        for parent in g.children(year["id"]):
+            if "folder" in parent and (parent["name"] == prefix or parent["name"].startswith(prefix + " ")
+                                       or parent["name"] == sp.CANCELLED):
+                for c in g.children(parent["id"]):
+                    m = re.match(rf"^{re.escape(prefix)}-(\d{{1,4}})\b", c["name"])
+                    if m:
+                        best = max(best, int(m[1]))
+        return best
+    except Exception as e:  # noqa: BLE001 - the number still comes from the ERP's own queue
+        log.warning("server_max %s.%s: %s", yy, code, e)
+        return 0
+
+
 def sync_numbers(db: Session) -> dict[str, int]:
     """Read the job numbers already used on the server (folder names «26.29-43 …») into the number queues."""
     g = sp.graph()
