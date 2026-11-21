@@ -132,25 +132,30 @@ def compute_line(line: JobLine, job: Job, ctx: Context) -> dict:
     return out
 
 
+def snap_line(line: JobLine, job: Job, ctx: Context) -> None:
+    """Freeze FX and tax rates of one line of a closed month (raises ValueError without a final rate)."""
+    month = line.month
+    fx = ctx.fx(month, line.currency)
+    if fx.rate is None or fx.provisional:
+        raise ValueError(f"Нет зафиксированного курса {line.currency} за {month}")
+    icur = line.inspector_currency or line.currency
+    fxi = ctx.fx(month, icur)
+    if fxi.rate is None or fxi.provisional:
+        raise ValueError(f"Нет зафиксированного курса {icur} за {month}")
+    client = ctx.client(job.client_id)
+    live = compute_line(line, job, ctx)
+    line.snap_fx = fx.rate
+    line.snap_fx_insp = fxi.rate
+    line.snap_gst, line.snap_tds, line.snap_admin = ctx.gst, ctx.tds, ctx.admin
+    line.snap_indian = bool(client and client.is_indian)
+    line.snap_wht = ctx.wht if client and client.wht else Decimal(0)
+    line.snap_rko_inr = Decimal(str(live["rko_inr"] or 0))
+
+
 def snapshot_month(db: Session, month: str, ctx: Context) -> int:
     """Freeze FX and tax rates into every line of the month. Returns the number of lines."""
     n = 0
     for line in db.scalars(select(JobLine).where(JobLine.month == month, JobLine.deleted.is_(False))):
-        job = db.get(Job, line.job_id)
-        fx = ctx.fx(month, line.currency)
-        if fx.rate is None or fx.provisional:
-            raise ValueError(f"Нет зафиксированного курса {line.currency} за {month}")
-        icur = line.inspector_currency or line.currency
-        fxi = ctx.fx(month, icur)
-        if fxi.rate is None or fxi.provisional:
-            raise ValueError(f"Нет зафиксированного курса {icur} за {month}")
-        client = ctx.client(job.client_id)
-        live = compute_line(line, job, ctx)
-        line.snap_fx = fx.rate
-        line.snap_fx_insp = fxi.rate
-        line.snap_gst, line.snap_tds, line.snap_admin = ctx.gst, ctx.tds, ctx.admin
-        line.snap_indian = bool(client and client.is_indian)
-        line.snap_wht = ctx.wht if client and client.wht else Decimal(0)
-        line.snap_rko_inr = Decimal(str(live["rko_inr"] or 0))
+        snap_line(line, db.get(Job, line.job_id), ctx)
         n += 1
     return n

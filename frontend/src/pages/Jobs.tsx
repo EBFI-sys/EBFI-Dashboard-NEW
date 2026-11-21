@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, compactDates, downloadCsv, num } from "../api";
+import { api, compactDates, downloadCsv, monthLabel, num, thisMonth } from "../api";
 import { useAuth } from "../auth";
-import { JobDatesModal, JobsCalendar } from "../components/Calendar";
+import { JobDatesModal, JobsCalendar, shiftMonth } from "../components/Calendar";
 import { ClientChip, OwnerChip } from "../components/Chips";
 import { EditForm, Field } from "../components/CrudTable";
 import DataTable, { Col } from "../components/DataTable";
@@ -24,7 +24,7 @@ export const jobFields: Field[] = [
 /** Inspector, dates and rates entered together with a new job (the first assignment). */
 const firstAssignment: Field[] = [
   { key: "a_inspector_id", label: "Инспектор", type: "ref", ref: "inspectors" },
-  { key: "a_dates_text", label: "Даты инспекции", type: "dates" },
+  { key: "a_dates_text", label: "Даты инспекции", type: "dates", required: true },
   { key: "a_client_rate", label: "Ставка клиента (за день)", type: "money" },
   { key: "a_currency", label: "Валюта клиента", type: "select", options: CURRENCIES, required: true },
   { key: "a_inspector_rate", label: "Ставка инспектора (за день)", type: "money" },
@@ -51,24 +51,33 @@ export default function Jobs() {
   const inspectorRows = useRef_("inspectors");
   const inspectors = useMemo(() => new Map(inspectorRows.map((i) => [i.id, i])), [inspectorRows]);
   const [status, setStatus] = useState("В работе,Пауза");
+  const [month, setMonth] = useState(thisMonth());
   const [add, setAdd] = useState(false);
   const [cal, setCal] = useState(false);
   const [dates, setDates] = useState<any | null>(null);
   const [visible, setVisible] = useState<any[]>([]);
-  const { data, error, loading, reload } = useAsync(() => api.get<any[]>(`/jobs?status=${encodeURIComponent(status)}`), [status]);
+  const { data, error, loading, reload } = useAsync(() => api.get<any[]>(`/jobs?status=${encodeURIComponent(status)}${month ? `&month=${month}` : ""}`), [status, month]);
 
   const rows = useMemo(() => (data ?? []).map((j) => {
     const as = j.assignments ?? [];
+    const v = month && !j.carried ? j.view : null;  // the month's part of the job
+    const ds: string[] = v ? v.dates : j.dates ?? [];
     return {
-      ...j, md: j.totals.man_days, date_text: compactDates(j.dates ?? [], 99),
+      ...j, md: v ? v.man_days : j.totals.man_days, ds, date_text: compactDates(ds, 99),
       inspector: as.map((a: any) => a.inspector_name).filter(Boolean).join(", ") || null,
       client_rate_text: rateText(as, "client_rate", "currency"),
       inspector_rate_text: rateText(as.filter((a: any) => !a.no_subcontractor), "inspector_rate", "inspector_currency"),
     };
-  }), [data]);
+  }), [data, month]);
 
   const cols: Col[] = [
-    { key: "status", label: "Статус", render: (j) => <Pill status={j.status} /> },
+    {
+      key: "status", label: "Статус", render: (j) => (
+        <span className="status-cell"><Pill status={j.status} />
+          {j.dates_passed && <span className="pill late-pill" title={`Последняя дата ${j.last_date.split("-").reverse().join(".")} прошла — завершите работу`}>даты прошли</span>}
+        </span>
+      ),
+    },
     { key: "job_number", label: "Job №", cls: "mono" },
     { key: "client_name", label: "Клиент", render: (j) => <ClientChip name={j.client_name} /> },
     { key: "inspector", label: "Инспектор" },
@@ -76,11 +85,12 @@ export default function Jobs() {
     { key: "country", label: "Страна" },
     { key: "owner", label: "Чья", render: (j) => <OwnerChip initials={j.owner} /> },
     {
-      key: "date_text", label: "Дата", text: (j) => compactDates(j.dates ?? [], 99) || null,
+      key: "date_text", label: month ? "Дата (" + monthLabel(month).split(" ")[0].toLowerCase() + ")" : "Дата", text: (j) => j.date_text || null,
       render: (j) => (
-        <button type="button" className={"date-cell" + (j.dates?.length ? "" : " empty-dates")} title="Открыть календарь дат инспекции"
+        <button type="button" className={"date-cell" + (j.ds?.length ? "" : " empty-dates")}
+          title={j.carried ? "Все даты в прошлых месяцах — работа не завершена" : "Открыть календарь дат инспекции"}
           onClick={(e) => { e.stopPropagation(); setDates(j); }}>
-          {j.dates?.length ? compactDates(j.dates)
+          {j.ds?.length ? compactDates(j.ds)
             : (j.assignments ?? []).map((a: any) => a.dates_text).filter(Boolean).join("; ") || "указать даты"}
         </button>
       ),
@@ -91,15 +101,16 @@ export default function Jobs() {
   ];
 
   const create = async (d: any) => {
-    const job = await api.post("/jobs", Object.fromEntries(Object.entries(d).filter(([k]) => !k.startsWith("a_"))));
-    if (d.a_inspector_id || d.a_dates_text || d.a_client_rate || d.a_inspector_rate) {
-      await api.put(`/jobs/${job.id}/assignments/1`, {
+    const job = await api.post("/jobs", {
+      ...Object.fromEntries(Object.entries(d).filter(([k]) => !k.startsWith("a_"))),
+      assignment: {
         inspector_id: d.a_inspector_id, dates_text: d.a_dates_text, unit: "day", currency: d.a_currency, client_rate: d.a_client_rate ?? 0,
         inspector_rate: d.a_inspector_rate ?? 0, inspector_currency: d.a_inspector_currency, no_subcontractor: !d.a_inspector_rate && !d.a_inspector_id,
-      });
-    }
+      },
+    });
     nav(`/jobs/${job.id}`);
   };
+  const months = useMemo(() => Array.from({ length: 19 }, (_, i) => shiftMonth(thisMonth(), 6 - i)), []);
 
   return (
     <div className="page">
@@ -116,6 +127,14 @@ export default function Jobs() {
               <button key={l} className={status === v ? "on" : ""} onClick={() => setStatus(v)}>{l}</button>
             ))}
           </div>
+          <div className="month-pick" role="group" aria-label="Отчётный месяц">
+            <button className="btn small ghost" disabled={!month} onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Предыдущий месяц">‹</button>
+            <select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Отчётный месяц">
+              {months.map((m) => <option key={m} value={m}>{monthLabel(m)}{m === thisMonth() ? " (текущий)" : ""}</option>)}
+              <option value="">Все месяцы</option>
+            </select>
+            <button className="btn small ghost" disabled={!month} onClick={() => setMonth(shiftMonth(month, 1))} aria-label="Следующий месяц">›</button>
+          </div>
           <span className="muted">{loading ? "Загрузка…" : `${visible.length} работ`}</span>
           <div className="spacer" />
           <button className="btn ghost" onClick={() => downloadCsv("tabel.csv", visible, [
@@ -125,7 +144,13 @@ export default function Jobs() {
           {can("write") && <button className="btn primary" onClick={() => setAdd(true)}>Новая работа</button>}
         </div>
         <ErrorLine error={error} />
+        {month && <p className="muted small table-note">{monthLabel(month)}: только работы с днями в этом месяце, даты и MD — за этот месяц.
+          {month === thisMonth() && " Незавершённые работы, у которых все даты в прошлых месяцах, тоже здесь, пока их не завершат."}
+          {" "}<span className="late-key" /> — изменён закрытый месяц или работа не завершена после закрытия месяца.</p>}
         <DataTable rows={rows} cols={cols} onRowClick={(j) => nav(`/jobs/${j.id}`)} onVisible={setVisible}
+          rowClass={(j) => (j.flag ? "late" : undefined)}
+          rowTitle={(j) => j.overdue ? "Месяц закрыт больше суток назад, а работа не завершена"
+            : j.late_edit_at ? "Закрытый месяц изменён позже суток после закрытия — проверьте в карточке" : undefined}
           empty={loading ? "Загрузка…" : "Работ не найдено."} />
       </section>
       {cal && <JobsCalendar onClose={() => setCal(false)} />}

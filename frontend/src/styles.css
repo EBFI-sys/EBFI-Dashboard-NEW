@@ -433,3 +433,18 @@ body, .card, .side, .modal, .popover, input, select, textarea, .btn { transition
 .dz-list a { overflow-wrap: anywhere; }
 .icon-link { color: var(--muted); display: inline-flex; }
 .icon-link:hover { color: var(--accent); }
+
+/* Табель: отчётный месяц и фиолетовые строки */
+.month-pick { display: inline-flex; align-items: center; gap: 4px; }
+.month-pick select { min-width: 150px; }
+.status-cell { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.pill.late-pill { background: rgba(168, 85, 247, 0.16); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.45); font-size: 11px; }
+tr.late > td { background: rgba(168, 85, 247, 0.17) !important; }
+tr.late > td:first-child { box-shadow: inset 3px 0 0 #a855f7; }
+tr.late:hover > td { background: rgba(168, 85, 247, 0.26) !important; }
+.late-key { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: #a855f7; vertical-align: middle; }
+.table-note { margin: 0 0 8px; }
+.banner.late { background: rgba(168, 85, 247, 0.1); border-color: rgba(168, 85, 247, 0.45); }
+.banner.late p { margin: 4px 0; }
+[data-theme="light"] .pill.late-pill { color: #7e22ce; }
+[data-theme="light"] tr.late > td { background: rgba(168, 85, 247, 0.12) !important; }

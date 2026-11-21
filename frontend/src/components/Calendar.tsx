@@ -145,7 +145,7 @@ export function JobDatesModal({ job, onClose, onSaved }: {
   const closed = new Set<string>(a?.closed_months ?? []);
 
   const toggle = async (d: string) => {
-    if (!a || closed.has(d.slice(0, 7))) return;
+    if (!a) return;
     const n = new Set(mine);
     n.has(d) ? n.delete(d) : n.add(d);
     setDates({ ...dates, [grp]: n });
@@ -180,11 +180,11 @@ export function JobDatesModal({ job, onClose, onSaved }: {
         <strong>{monthLabel(view)}</strong>
         <button className="btn small ghost" onClick={() => setView(shiftMonth(view, 1))} aria-label="Следующий месяц">→</button>
       </div>
-      <MonthGrid month={view} selected={mine} onPick={a && !closed.has(view) ? toggle : undefined}
+      <MonthGrid month={view} selected={mine} onPick={a ? toggle : undefined}
         render={(d) => (!mine.has(d) && others.has(d) ? <span className="cal-dot" title="Дата другого инспектора этой работы" /> : null)} />
       <p className="muted small">
         Нажмите на день, чтобы отметить или снять дату — сохраняется сразу{saving ? " (сохраняю…)" : ""}. Даты могут идти через несколько
-        месяцев: в финансовых результатах работа сама разложится по месяцам. {closed.has(view) && "Этот месяц закрыт — даты в нём не меняются. "}
+        месяцев: в финансовых результатах работа сама разложится по месяцам. {closed.has(view) && "Этот месяц закрыт: изменить можно, но позже суток после закрытия работа будет отмечена фиолетовым. "}
         Выбрано: {mine.size} дн.
       </p>
       {err && <p className="error">{err}</p>}

@@ -20,6 +20,8 @@ type Props = {
   cols: Col[];
   rowKey?: (row: any) => string | number;
   onRowClick?: (row: any) => void;
+  rowClass?: (row: any) => string | undefined;
+  rowTitle?: (row: any) => string | undefined;
   actions?: (row: any) => React.ReactNode;
   empty?: React.ReactNode;
   filters?: boolean; // Excel-style filters in the header (default true)
@@ -141,7 +143,7 @@ function FilterMenu({ col, rows, selected, onChange, onSort, close, at }: {
   );
 }
 
-export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, actions, empty, filters = true, onVisible, footer, className, storageKey, footLabel }: Props) {
+export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, rowClass, rowTitle, actions, empty, filters = true, onVisible, footer, className, storageKey, footLabel }: Props) {
   const [shownExtra, setShownExtra] = useState<Set<string>>(() => new Set(loadShown(storageKey) ?? []));
   const saveShown = (s: Set<string>) => {
     setShownExtra(s);
@@ -216,7 +218,7 @@ export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, act
         </thead>
         <tbody>
           {visible.map((r, i) => (
-            <tr key={rowKey ? rowKey(r) : r.id ?? i} className={onRowClick ? "clickable" : ""} onClick={() => onRowClick?.(r)}>
+            <tr key={rowKey ? rowKey(r) : r.id ?? i} className={[onRowClick ? "clickable" : "", rowClass?.(r) ?? ""].join(" ").trim()} title={rowTitle?.(r)} onClick={() => onRowClick?.(r)}>
               {cols.map((c) => (
                 <td key={c.key} className={(c.align === "r" ? "r " : "") + (c.cls ?? "")}>
                   {c.render ? c.render(r) : (r[c.key] ?? "—")}

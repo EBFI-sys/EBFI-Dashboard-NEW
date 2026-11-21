@@ -32,6 +32,9 @@ STEPS = [
        WHERE inspector_id IS NOT NULL AND inspector_ids IS NULL""",
     # «CV отправлены» is no longer a separate status
     "UPDATE requests SET status = 'В процессе' WHERE status = 'CV отправлены'",
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS late_edit_at TIMESTAMPTZ",
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS late_edit_by INTEGER REFERENCES users(id)",
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS late_edit_months VARCHAR(100)",
 ]
 
 

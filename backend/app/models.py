@@ -167,11 +167,15 @@ class Job(Base, TimestampMixin, SoftDelete):
     vendor: Mapped[str | None] = mapped_column(String(300))
     country: Mapped[str | None] = mapped_column(String(80))
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
-    status: Mapped[str] = mapped_column(String(20), default="В работе")  # В работе | Пауза | Сдан
+    status: Mapped[str] = mapped_column(String(20), default="В работе")  # В работе | Пауза | Завершен
     pre_november: Mapped[bool] = mapped_column(Boolean, default=False)  # opened before the system
     sp_folder_id: Mapped[str | None] = mapped_column(String(100))  # OneDrive folder of the job (id survives renames)
     sp_folder_url: Mapped[str | None] = mapped_column(Text)
     sp_error: Mapped[str | None] = mapped_column(Text)  # last failure talking to OneDrive, shown on the job card
+    # a closed month of this job was changed later than 24 h after closing: the row is purple until checked
+    late_edit_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    late_edit_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    late_edit_months: Mapped[str | None] = mapped_column(String(100))
     notes: Mapped[str | None] = mapped_column(Text)
     lines: Mapped[list["JobLine"]] = relationship(back_populates="job", order_by="JobLine.month")
     client: Mapped[Client] = relationship()

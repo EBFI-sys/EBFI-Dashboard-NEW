@@ -154,8 +154,8 @@ export default function JobCard() {
     try {
       saved(await api.post(`/jobs/${j.id}/assignments`, {
         unit: last.unit ?? "day", currency: last.currency ?? "USD", client_rate: last.client_rate ?? 0,
-        inspector_currency: last.inspector_currency ?? last.currency ?? "USD", inspector_rate: 0, dates_text: null,
-      }), "Добавлен второй инспектор — заполните его данные");
+        inspector_currency: last.inspector_currency ?? last.currency ?? "USD", inspector_rate: 0, dates_text: last.dates_text ?? null,
+      }), "Добавлен второй инспектор с теми же датами — поправьте его данные");
     } catch (e: any) {
       setErr(e.message);
     }
@@ -189,6 +189,8 @@ export default function JobCard() {
           {can("delete_work") && <button className="btn ghost danger-text" onClick={() => setRemove("delete")}>Удалить</button>}
         </div>
       </header>
+
+      {j.flag && <LateBanner j={j} canClear={can("close_month")} onCleared={() => api.get(`/jobs/${j.id}`).then((nj) => saved(nj, "Отметка снята"))} />}
 
       <section className="card">
         <dl className="facts">
@@ -301,5 +303,26 @@ function RemoveJob({ job, mode, onClose, onDone }: { job: any; mode: "request" |
         </button>
       </div>
     </Modal>
+  );
+}
+
+/** Why the row is purple in the Табель: a closed month changed late, or the job left open after its month closed. */
+function LateBanner({ j, canClear, onCleared }: { j: any; canClear: boolean; onCleared: () => void }) {
+  const [err, setErr] = useState<string | null>(null);
+  const when = j.late_edit_at ? new Date(j.late_edit_at).toLocaleString("ru-RU", { timeZone: "Asia/Kolkata", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+  return (
+    <div className="banner late">
+      {j.overdue && <p><b>Работа не завершена</b>, хотя месяц её последней даты ({monthLabel(j.last_date.slice(0, 7))}) закрыт больше суток назад. Отметка уйдёт, когда работа получит статус «Завершен».</p>}
+      {j.late_edit_at && (
+        <p>
+          <b>Изменён закрытый месяц</b> ({(j.late_edit_months ?? "").split(",").filter(Boolean).map(monthLabel).join(", ")}) позже суток после закрытия
+          {j.late_edit_by ? ` — ${j.late_edit_by}` : ""}, {when}. Финансовые результаты этого месяца пересчитаны.
+          {canClear && <button className="btn small" style={{ marginLeft: 10 }} onClick={async () => {
+            try { await api.post(`/jobs/${j.id}/late-edit/clear`); onCleared(); } catch (e: any) { setErr(e.message); }
+          }}>Проверено — снять отметку</button>}
+        </p>
+      )}
+      {err && <p className="error">{err}</p>}
+    </div>
   );
 }

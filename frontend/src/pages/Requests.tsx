@@ -78,6 +78,7 @@ function CreateJob({ req, onClose, onDone }: { req: any; onClose: () => void; on
   const inspectors = useRef_("inspectors");
   const clients = useRef_("clients");
   const [no, setNo] = useState("");
+  const [dates, setDates] = useState<string>(req.dates_text ?? "");
   const [hint, setHint] = useState<string | null>(null);
   const [pick, setPick] = useState<Set<number>>(new Set(req.inspector_ids?.length === 1 ? req.inspector_ids : req.inspector_id ? [req.inspector_id] : []));
   const [err, setErr] = useState<string | null>(null);
@@ -90,7 +91,7 @@ function CreateJob({ req, onClose, onDone }: { req: any; onClose: () => void; on
     e.preventDefault();
     setBusy(true);
     try {
-      const job = await api.post(`/requests/${req.id}/create-job`, { job_number: no, inspector_ids: [...pick] });
+      const job = await api.post(`/requests/${req.id}/create-job`, { job_number: no, inspector_ids: [...pick], dates_text: dates });
       onDone();
       nav(`/jobs/${job.id}`);
     } catch (e: any) {
@@ -105,6 +106,10 @@ function CreateJob({ req, onClose, onDone }: { req: any; onClose: () => void; on
         <label className="field wide"><span>Job number</span>
           <input autoFocus value={no} onChange={(e) => setNo(e.target.value)} placeholder="26.19-478" className="mono" />
           <small>{hint ?? `Следующий свободный номер в регистре ${client?.name ?? "клиента"} (код ${client?.job_code ?? "—"}). Можно изменить.`}</small>
+        </label>
+        <label className="field wide"><span>Даты инспекции *</span>
+          <input value={dates} onChange={(e) => setDates(e.target.value)} placeholder="05,06.11.2026 или 16-20.11.2026" />
+          <small>Без дат работа в Табель не переносится. По датам она попадёт в Табель своего месяца (или нескольких).</small>
         </label>
         <div className="field wide">
           <span>Кто поедет на инспекцию</span>
@@ -125,7 +130,6 @@ function CreateJob({ req, onClose, onDone }: { req: any; onClose: () => void; on
             <dt>Клиент</dt><dd>{client?.name ?? "—"}{req.final_client ? ` · финальный клиент ${req.final_client}` : ""}</dd>
             <dt>Завод</dt><dd>{req.factory ?? "—"}</dd>
             <dt>Страна</dt><dd>{req.country ?? "—"}</dd>
-            <dt>Даты</dt><dd>{req.dates_text ?? "—"}</dd>
             <dt>Ставка клиента</dt><dd>{req.client_rate != null ? money(req.client_rate, req.client_currency ?? "USD") : "—"}</dd>
             <dt>Ставка инспектора</dt><dd>{req.inspector_rate != null ? money(req.inspector_rate, req.inspector_currency ?? req.client_currency ?? "USD") : "—"}</dd>
           </dl>
@@ -133,7 +137,7 @@ function CreateJob({ req, onClose, onDone }: { req: any; onClose: () => void; on
         <ErrorLine error={err} />
         <div className="form-actions wide">
           <button type="button" className="btn ghost" onClick={onClose}>Отмена</button>
-          <button className="btn primary" disabled={busy || !no}>{busy ? "Создаю…" : "Создать работу"}</button>
+          <button className="btn primary" disabled={busy || !no || !dates.trim()}>{busy ? "Создаю…" : "Создать работу"}</button>
         </div>
       </form>
     </Modal>

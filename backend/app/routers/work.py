@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from .. import files, sharepoint
-from ..calc import Context, compute_line
+from ..calc import Context, compute_line, snap_line
 from ..dates import format_dates, parse_dates
 from ..db import get_db
 from ..directory import remember_country, remember_final_client, remember_vendor
@@ -63,6 +63,12 @@ def create_job_from_request(rid: int, data: dict, db: Session = Depends(get_db),
         raise HTTPException(400, "Отменённую заявку нельзя перенести в Табель")
     if not req.client_id:
         raise HTTPException(422, "В заявке не указан клиент")
+    dates_text = (data.get("dates_text") or req.dates_text or "").strip()
+    if not dates_text or not parse_dates(dates_text, _this_month()):
+        raise HTTPException(422, "Укажите даты инспекции: работа в Табеле не может быть без дат" if not dates_text else
+                            f"Не понял даты «{dates_text}» — например 05,06.11.2026 или 16-20.11.2026")
+    if data.get("dates_text"):
+        req.dates_text = dates_text
     number = (data.get("job_number") or "").strip() or next_job_number(db, req.client_id)
     if not JOB_RE.match(number):
         raise HTTPException(422, "Job number должен быть в формате ГГ.КК-ННН, например 26.19-478")
@@ -125,7 +131,29 @@ def job_next_number(client_id: int, db: Session = Depends(get_db), _=Depends(nee
 
 
 # ---------------------------------------------------------------- jobs
-def job_dict(job: Job, db: Session, ctx: Context, with_lines: bool = False) -> dict:
+def _view(job: Job, lines: list[JobLine], month: str) -> dict:
+    """The job as the Табель of one month shows it: only the days of that month."""
+    ls = [l for l in lines if l.month == month]
+    return {"month": month, "dates": sorted({x.isoformat() for l in ls for x in parse_dates(l.dates_text, l.month)}),
+            "man_days": float(sum(Decimal(l.quantity or 0) for l in ls if l.unit == "day")),
+            "quantity": float(sum(Decimal(l.quantity or 0) for l in ls)),
+            "dates_text": "; ".join(l.dates_text for l in ls if l.dates_text) or None}
+
+
+def _flags(job: Job, d: dict, shut: dict, users: dict) -> None:
+    """Purple rows: a closed month changed later than 24 h after closing, or a job left open after its month closed."""
+    last = d["dates"][-1] if d["dates"] else None
+    open_ = job.status != "Завершен"
+    d["last_date"] = last
+    d["dates_passed"] = bool(open_ and last and last < clock.today().isoformat())
+    m = last[:7] if last else None
+    d["overdue"] = bool(d["dates_passed"] and m in shut and clock.now() > shut[m] + GRACE)
+    d["late_edit_by"] = users.get(job.late_edit_by)
+    d["flag"] = d["overdue"] or bool(job.late_edit_at)
+
+
+def job_dict(job: Job, db: Session, ctx: Context, with_lines: bool = False, month: str | None = None,
+             shut: dict | None = None, users: dict | None = None) -> dict:
     d = to_dict(job)
     client = ctx.client(job.client_id)
     d["client_name"] = client.name if client else None
@@ -157,6 +185,10 @@ def job_dict(job: Job, db: Session, ctx: Context, with_lines: bool = False) -> d
         t["net_inr"] += c["net_inr"] or 0
     d["assignments"] = assignments(job, db, ctx)
     d["files_enabled"] = sharepoint.enabled()
+    if month:
+        d["view"] = _view(job, lines, month)
+    _flags(job, d, shut if shut is not None else closes(db),
+           users if users is not None else {u.id: u.initials for u in db.scalars(select(User))})
     if with_lines:
         d["lines"] = out_lines
         d["sales_invoices"] = [to_dict(s) for s in db.scalars(
@@ -167,14 +199,38 @@ def job_dict(job: Job, db: Session, ctx: Context, with_lines: bool = False) -> d
 
 
 @r.get("/jobs")
-def list_jobs(status: str | None = None, q: str | None = None, db: Session = Depends(get_db), _=Depends(need("read"))):
+def list_jobs(status: str | None = None, q: str | None = None, month: str | None = None,
+              db: Session = Depends(get_db), _=Depends(need("read"))):
+    """The Табель. With `month` only the jobs with days in that month, showing those days; the current month also
+    keeps the unfinished jobs whose dates are all in earlier months, so none is lost before it is closed."""
     stmt = select(Job).where(Job.deleted.is_(False)).order_by(Job.id.desc())
     if status:
         stmt = stmt.where(Job.status.in_(status.split(",")))
     if q:
         stmt = stmt.where(Job.job_number.ilike(f"%{q}%") | Job.vendor.ilike(f"%{q}%") | Job.client_job_number.ilike(f"%{q}%"))
-    ctx = Context(db)
-    return [job_dict(j, db, ctx) for j in db.scalars(stmt)]
+    ctx, shut = Context(db), closes(db)
+    users = {u.id: u.initials for u in db.scalars(select(User))}
+    out = []
+    for j in db.scalars(stmt):
+        months = {l.month for l in j.lines if not l.deleted}
+        carried = bool(month and month == _this_month() and months and max(months) < month and j.status != "Завершен")
+        if month and month not in months and not carried:
+            continue
+        d = job_dict(j, db, ctx, month=month, shut=shut, users=users)
+        d["carried"] = carried
+        out.append(d)
+    return out
+
+
+@r.post("/jobs/{jid}/late-edit/clear")
+def clear_late_edit(jid: int, db: Session = Depends(get_db), _=Depends(need("close_month"))):
+    """The accountant has checked the change to a closed month: the purple mark goes."""
+    job = db.get(Job, jid)
+    if not job or job.deleted:
+        raise HTTPException(404, "Работа не найдена")
+    job.late_edit_at = job.late_edit_by = job.late_edit_months = None
+    _commit(db)
+    return {"ok": True}
 
 
 @r.get("/jobs/{jid}")
@@ -195,28 +251,37 @@ def _check_job(data: dict, db: Session, exclude_id: int | None = None):
 
 @r.post("/jobs")
 def create_job(data: dict, db: Session = Depends(get_db), user: User = Depends(need("write"))):
+    """A new job with its first inspector and dates: a job without dates cannot be in the Табель."""
     _check_job(data, db)
+    first = data.pop("assignment", None) or {}
     job = Job()
     apply(job, data)
     if not job.owner_id:
         job.owner_id = user.id
     if not job.client_id or not job.job_number:
         raise HTTPException(422, "Нужны Job number и клиент")
+    if db.scalar(select(Job).where(Job.job_number == job.job_number)):
+        raise HTTPException(409, f"Работа {job.job_number} уже есть в Табеле")
     remember_country(db, job.country)
     remember_vendor(db, job.vendor, job.country)
     db.add(job)
+    db.flush()
+    sync_assignment(db, job, 1, first, user=user)
     _commit(db)
     files.ensure_job_folder(db, job)
     return job_dict(job, db, Context(db))
 
 
 @r.patch("/jobs/{jid}")
-def update_job(jid: int, data: dict, db: Session = Depends(get_db), _=Depends(need("write"))):
+def update_job(jid: int, data: dict, db: Session = Depends(get_db), user: User = Depends(need("write"))):
     job = db.get(Job, jid)
     if not job or job.deleted:
         raise HTTPException(404, "Работа не найдена")
     _check_job(data, db)
+    client = job.client_id
     apply(job, data)
+    if job.client_id != client:  # the client changes the money of every month, closed ones too
+        mark_late(db, job, {l.month for l in job.lines if not l.deleted}, user)
     remember_country(db, job.country)
     remember_vendor(db, job.vendor, job.country)
     _commit(db)
@@ -327,40 +392,46 @@ def list_lines(month: str | None = None, db: Session = Depends(get_db), _=Depend
 
 
 @r.post("/lines")
-def create_line(data: dict, db: Session = Depends(get_db), _=Depends(need("write"))):
+def create_line(data: dict, db: Session = Depends(get_db), user: User = Depends(need("write"))):
     line = JobLine()
     apply(line, data)
-    if not line.job_id or not db.get(Job, line.job_id):
+    job = db.get(Job, line.job_id) if line.job_id else None
+    if not job:
         raise HTTPException(422, "Не указана работа")
-    if _closed(db, line.month):
-        raise HTTPException(400, f"Месяц {line.month} закрыт, правки запрещены")
     _line_check(line)
     db.add(line)
+    _snap_new(db, job, [line], closes(db))
+    mark_late(db, job, {line.month}, user)
     _commit(db)
     return to_dict(line)
 
 
 @r.patch("/lines/{lid}")
-def update_line(lid: int, data: dict, db: Session = Depends(get_db), _=Depends(need("write"))):
+def update_line(lid: int, data: dict, db: Session = Depends(get_db), user: User = Depends(need("write"))):
     line = db.get(JobLine, lid)
     if not line or line.deleted:
         raise HTTPException(404, "Строка не найдена")
-    if _closed(db, line.month) or ("month" in data and _closed(db, data["month"])):
-        raise HTTPException(400, f"Месяц {line.month} закрыт, правки запрещены")
-    apply(line, data, {"snap_fx", "snap_gst", "snap_tds", "snap_admin", "snap_indian", "snap_rko_inr"})
+    was, old = _state(line), line.month
+    apply(line, data, {"snap_fx", "snap_fx_insp", "snap_gst", "snap_tds", "snap_admin", "snap_indian", "snap_wht", "snap_rko_inr"})
     _line_check(line)
+    if old != line.month:
+        line.snap_fx = None
+        _snap_new(db, line.job, [line], closes(db))
+    if was != _state(line) or old != line.month:
+        mark_late(db, line.job, {old, line.month}, user)
     _commit(db)
     return to_dict(line)
 
 
 @r.delete("/lines/{lid}")
-def delete_line(lid: int, db: Session = Depends(get_db), _=Depends(need("delete_work"))):
+def delete_line(lid: int, db: Session = Depends(get_db), user: User = Depends(need("delete_work"))):
     line = db.get(JobLine, lid)
     if not line:
         raise HTTPException(404, "Строка не найдена")
-    if _closed(db, line.month):
-        raise HTTPException(400, "Месяц закрыт")
+    if line.sales_invoice_id:
+        raise HTTPException(400, "Строка уже в инвойсе клиенту")
     line.deleted = True
+    mark_late(db, line.job, {line.month}, user)
     _commit(db)
     return {"ok": True}
 
@@ -378,12 +449,55 @@ def _this_month() -> str:
     return clock.today().strftime("%Y-%m")
 
 
-def sync_assignment(db: Session, job: Job, grp: int, data: dict, strict: bool = True) -> list[JobLine]:
+TRACKED = ("inspector_id", "dates_text", "quantity", "unit", "currency", "client_rate", "inspector_rate",
+           "inspector_currency", "overtime_client", "overtime_inspector", "no_subcontractor", "payment_method_id",
+           "rko_override_inr", "deleted")
+GRACE = dt.timedelta(hours=24)  # after closing a month, managers have a day to finish it without a mark
+
+
+def _state(l: JobLine) -> tuple:
+    return tuple(str(getattr(l, k)) if getattr(l, k) is not None else "" for k in TRACKED)
+
+
+def closes(db: Session) -> dict[str, dt.datetime]:
+    return {m.month: m.closed_at for m in db.scalars(select(MonthClose))}
+
+
+def mark_late(db: Session, job: Job, months: set[str], user: User | None) -> None:
+    """A closed month of the job was changed: later than 24 h after closing, the job is marked (purple row)."""
+    shut = closes(db)
+    late = sorted(m for m in months if m in shut and clock.now() > shut[m] + GRACE)
+    if not late:
+        return
+    job.late_edit_at = clock.now()
+    job.late_edit_by = user.id if user else None
+    job.late_edit_months = ",".join(sorted(set(filter(None, (job.late_edit_months or "").split(","))) | set(late)))
+
+
+def _snap_new(db: Session, job: Job, lines: list[JobLine], shut: dict) -> None:
+    """A line added to a closed month gets that month's frozen rates (live rates if the month has none)."""
+    ctx = None
+    for l in lines:
+        if l.month in shut and l.snap_fx is None and not l.deleted:
+            ctx = ctx or Context(db)
+            try:
+                snap_line(l, job, ctx)
+            except ValueError:
+                pass
+
+
+def sync_assignment(db: Session, job: Job, grp: int, data: dict, strict: bool = True,
+                    user: User | None = None) -> list[JobLine]:
+    """Rebuild the month lines of one inspector on the job from its dates. Closed months can be changed too:
+    such a change is recorded (mark_late), the month keeps its frozen FX and tax rates."""
     lines = [l for l in job.lines if not l.deleted and (l.grp or 1) == grp] if job.id else []
-    closed = {m.month for m in db.scalars(select(MonthClose))}
+    shut = closes(db)
     ref = max((l.month for l in lines), default=None) or _this_month()
-    text = data.get("dates_text")
+    text = (data.get("dates_text") or "").strip() or None
     dates = parse_dates(text, ref) if text else []
+    if strict and not dates:
+        raise HTTPException(422, f"Не понял даты «{text}» — например 05,06.11.2026 или 16-20.11.2026" if text else
+                            "Укажите даты инспекции: работа в Табеле не может быть без дат")
     unit = data.get("unit") or (lines[-1].unit if lines else "day")
     qty_in = data.get("quantity")
     plan: dict[str, dict] = {}
@@ -393,24 +507,15 @@ def sync_assignment(db: Session, job: Job, grp: int, data: dict, strict: bool = 
             by_m.setdefault(d.strftime("%Y-%m"), []).append(d)
         if unit == "day" and len(by_m) > 1:
             plan = {m: {"dates_text": format_dates(ds), "quantity": len(ds)} for m, ds in by_m.items()}
-        else:
+        else:  # a visit, a lump sum: the month of the (last) visit date
             m = max(by_m)
             empty = qty_in in (None, "") or (unit == "day" and float(qty_in or 0) == 0)  # 0 MD with dates = not filled in
             q = (len(dates) if unit == "day" else 0) if empty else qty_in
             plan = {m: {"dates_text": format_dates(dates), "quantity": q}}
     else:
-        plan = {ref: {"dates_text": text or None, "quantity": qty_in or 0}}
+        plan = {ref: {"dates_text": text, "quantity": qty_in or 0}}
     have = {l.month: l for l in lines}
-    for m, l in have.items():
-        if m in closed:
-            same = m in plan and (plan[m]["dates_text"] or "") == (l.dates_text or "") and \
-                float(plan[m]["quantity"] or 0) == float(l.quantity or 0)
-            if strict and not same and (m in plan or l.quantity):
-                raise HTTPException(400, f"Месяц {m} закрыт: даты и количество за него менять нельзя")
-            plan.pop(m, None)
-    for m in plan:
-        if m in closed:
-            raise HTTPException(400, f"Месяц {m} закрыт: добавить в него даты нельзя")
+    before = {m: _state(l) for m, l in have.items()}
     last = max(plan) if plan else None
     out = []
     for m, spec in sorted(plan.items()):
@@ -428,10 +533,14 @@ def sync_assignment(db: Session, job: Job, grp: int, data: dict, strict: bool = 
             db.add(line)
         out.append(line)
     for m, l in have.items():
-        if m not in closed and m not in plan:
+        if m not in plan:
             if l.sales_invoice_id:
                 raise HTTPException(400, f"Строка за {m} уже в инвойсе клиенту — даты из этого месяца убрать нельзя")
             l.deleted = True
+    changed = {m for m in set(plan) | set(have) if m in shut and
+               (m not in have or before[m] != _state(have[m]))}
+    _snap_new(db, job, out, shut)
+    mark_late(db, job, changed, user)
     db.flush()
     db.refresh(job)
     return out
@@ -444,7 +553,8 @@ def fill_from_dates(db: Session) -> int:
     n = 0
     for l in list(db.scalars(select(JobLine).where(JobLine.deleted.is_(False), JobLine.unit == "day", JobLine.quantity == 0,
                                               JobLine.dates_text.is_not(None)))):
-        if l.month in closed or not parse_dates(l.dates_text, l.month):
+        ds = parse_dates(l.dates_text, l.month)
+        if l.month in closed or not ds or any(d.strftime("%Y-%m") in closed for d in ds):
             continue
         group = [x for x in l.job.lines if not x.deleted and (x.grp or 1) == (l.grp or 1)]
         if len(group) == 1:  # a single-month assignment: rebuild it from its dates (may move to the right month)
@@ -495,39 +605,41 @@ def assignments(job: Job, db: Session, ctx: Context) -> list[dict]:
 
 
 @r.put("/jobs/{jid}/assignments/{grp}")
-def put_assignment(jid: int, grp: int, data: dict, db: Session = Depends(get_db), _=Depends(need("write"))):
+def put_assignment(jid: int, grp: int, data: dict, db: Session = Depends(get_db), user: User = Depends(need("write"))):
     job = db.get(Job, jid)
     if not job or job.deleted:
         raise HTTPException(404, "Работа не найдена")
-    sync_assignment(db, job, grp, data)
+    sync_assignment(db, job, grp, data, user=user)
     _commit(db)
     files.ensure_job_folder(db, job)
     return job_dict(job, db, Context(db), with_lines=True)
 
 
 @r.post("/jobs/{jid}/assignments")
-def add_assignment(jid: int, data: dict, db: Session = Depends(get_db), _=Depends(need("write"))):
+def add_assignment(jid: int, data: dict, db: Session = Depends(get_db), user: User = Depends(need("write"))):
     job = db.get(Job, jid)
     if not job or job.deleted:
         raise HTTPException(404, "Работа не найдена")
     grp = max((l.grp or 1 for l in job.lines if not l.deleted), default=0) + 1
-    sync_assignment(db, job, grp, data)
+    sync_assignment(db, job, grp, data, user=user)
     _commit(db)
     files.ensure_job_folder(db, job)
     return job_dict(job, db, Context(db), with_lines=True)
 
 
 @r.delete("/jobs/{jid}/assignments/{grp}")
-def delete_assignment(jid: int, grp: int, db: Session = Depends(get_db), _=Depends(need("delete_work"))):
+def delete_assignment(jid: int, grp: int, db: Session = Depends(get_db), user: User = Depends(need("delete_work"))):
     job = db.get(Job, jid)
     if not job:
         raise HTTPException(404, "Работа не найдена")
-    closed = {m.month for m in db.scalars(select(MonthClose))}
-    for l in job.lines:
-        if not l.deleted and (l.grp or 1) == grp:
-            if l.month in closed or l.sales_invoice_id:
-                raise HTTPException(400, "Есть закрытый месяц или инвойс клиенту — удалить нельзя")
-            l.deleted = True
+    mine = [l for l in job.lines if not l.deleted and (l.grp or 1) == grp]
+    if len({l.grp or 1 for l in job.lines if not l.deleted}) <= 1:
+        raise HTTPException(400, "Это единственный инспектор работы: работа в Табеле не может быть без дат")
+    if any(l.sales_invoice_id for l in mine):
+        raise HTTPException(400, "Строки уже в инвойсе клиенту — удалить нельзя")
+    for l in mine:
+        l.deleted = True
+    mark_late(db, job, {l.month for l in mine}, user)
     _commit(db)
     files.ensure_job_folder(db, job)
     return job_dict(job, db, Context(db), with_lines=True)
