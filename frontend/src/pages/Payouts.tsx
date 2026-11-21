@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, money, monthLabel, num, today } from "../api";
 import CrudTable, { Field } from "../components/CrudTable";
+import { InvoiceFile } from "../components/Files";
 import { Modal, Pill } from "../components/ui";
 import { CURRENCIES } from "../refs";
 
@@ -132,26 +133,9 @@ export default function Payouts() {
             <button className={show === "all" ? "on" : ""} onClick={() => setShow("all")}>Все</button>
           </div>
         )}
-        rowActions={(r, reload) => <FileCell row={r} reload={reload} />} />
+        rowActions={(r, reload) => <InvoiceFile url={r.sp_file_url} hasFile={r.has_file} uploadUrl={`/api/inspector-invoices/${r.id}/file`} reload={reload} />} />
       {check && <CheckModal inv={check} onClose={() => setCheck(null)} />}
     </div>
   );
 }
 
-function FileCell({ row, reload }: { row: any; reload: () => void }) {
-  const [busy, setBusy] = useState(false);
-  if (row.has_file) return <a className="btn small ghost" href={`/api/inspector-invoices/${row.id}/file`} target="_blank" rel="noreferrer">PDF</a>;
-  return (
-    <label className="btn small ghost file-btn">
-      {busy ? "…" : "Загрузить PDF"}
-      <input type="file" accept=".pdf,.png,.jpg,.jpeg" hidden onChange={async (e) => {
-        const f = e.target.files?.[0];
-        if (!f) return;
-        setBusy(true);
-        const fd = new FormData();
-        fd.append("file", f);
-        try { await api.post(`/inspector-invoices/${row.id}/file`, fd); reload(); } catch (err: any) { alert(err.message); } finally { setBusy(false); }
-      }} />
-    </label>
-  );
-}

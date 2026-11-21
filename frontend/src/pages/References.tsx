@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import CrudTable, { Field } from "../components/CrudTable";
+import { StorageSettings } from "../components/Files";
 import { ErrorLine, Toast, useAsync } from "../components/ui";
 import { CURRENCIES, REGIONS } from "../refs";
 
@@ -11,6 +12,7 @@ const clientFields: Field[] = [
   { key: "color", label: "Цвет метки", wide: true, text: (r) => r.color,
     render: (r) => <ClientChip name={r.name} color={r.color} />,
     input: ({ value, onChange, row }) => <ColorInput value={value} onChange={onChange} fallback={defaultClientColor(row.name ?? "")} /> },
+  { key: "sp_folder", label: "Папка на сервере", list: false, hint: "Имя папки клиента в Server ГГГГ без кода, например «TUV R QATAR». Пусто — по названию клиента" },
   { key: "job_code", label: "Код в Job number (КК)", hint: "26.19-478 → код 19. Номер новой работы присваивается по очереди этого кода" },
   { key: "legal_name", label: "Полное юр. название", wide: true },
   { key: "address", label: "Адрес для инвойса", type: "textarea", list: false, hint: "Юридический адрес клиента — как он будет напечатан в инвойсе" },
@@ -61,7 +63,7 @@ const fxFields: Field[] = [
 
 const TABS = [
   ["clients", "Клиент"], ["final", "Финальный клиент"], ["inspectors", "Инспектор"], ["vendors", "Завод (Vendor)"], ["fx", "Курс валют"],
-  ["settings", "Налоги и нумерация"], ["pm", "Метод оплаты"], ["countries", "Страна"],
+  ["settings", "Налоги и нумерация"], ["pm", "Метод оплаты"], ["countries", "Страна"], ["storage", "Хранилище"],
 ] as const;
 
 export default function References() {
@@ -76,6 +78,7 @@ export default function References() {
       {tab === "vendors" && <CrudTable columnFilters={false} endpoint="/vendors" title="Завод (Vendor)" fields={vendorFields} refName="vendors" csvName="vendors.csv" />}
       {tab === "fx" && <CrudTable columnFilters={false} endpoint="/fx-rates" title="Курс валют к INR" fields={fxFields} writeRight="settings" defaults={{ currency: "USD" }} />}
       {tab === "settings" && <TaxSettings />}
+      {tab === "storage" && <StorageSettings />}
       {tab === "pm" && <CrudTable columnFilters={false} endpoint="/payment-methods" title="Метод оплаты и РКО" fields={pmFields} refName="payment-methods" />}
       {tab === "countries" && <CrudTable columnFilters={false} endpoint="/countries" title="Страна и регион" fields={countryFields} defaults={{ region: "Europe" }} />}
     </div>

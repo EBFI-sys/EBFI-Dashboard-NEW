@@ -5,11 +5,12 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import clock
+from .. import files, sharepoint
 from ..calc import Context, get_setting
 from ..config import settings
 from ..db import get_db
@@ -89,6 +90,7 @@ def _sales_ser(o: SalesInvoice, db: Session):
     # WHT the client keeps when paying (5%), in the invoice currency: it is not credited anywhere, so it is our loss
     d["wht"] = float(Decimal(o.amount) * Decimal(get_setting(db, "wht_rate"))) if c and c.wht else 0.0
     d["outstanding"] = float(Decimal(o.amount) - Decimal(o.received_amount or 0)) if o.status != "Paid" else 0.0
+    d["file_url"] = o.sp_file_url
     d["line_ids"] = [l.id for l in db.scalars(select(JobLine).where(JobLine.sales_invoice_id == o.id))]
     return d
 
@@ -203,7 +205,8 @@ def _ii_ser(o: InspectorInvoice, db: Session):
     d["payment_method"] = pm.name if pm else None
     d["job_ids"] = [j.id for j in o.jobs]
     d["job_numbers"] = [j.job_number for j in o.jobs]
-    d["has_file"] = bool(o.file_path)
+    d["has_file"] = bool(o.file_path or o.sp_file_url)
+    d["file_url"] = o.sp_file_url
     d.update(_check(o))
     return d
 
@@ -305,29 +308,88 @@ def inspector_work(iid: int, invoice_id: int | None = None, db: Session = Depend
     return out
 
 
+ALLOWED = (".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".xls", ".xlsx")
+
+
+async def _read_upload(file: UploadFile) -> tuple[bytes, str]:
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in ALLOWED:
+        raise HTTPException(422, "Загрузите PDF, Word, Excel или изображение")
+    content = await file.read()
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(422, "Файл больше 25 MB")
+    return content, ext
+
+
 @r.post("/inspector-invoices/{iid}/file")
 async def upload_file(iid: int, file: UploadFile = File(...), db: Session = Depends(get_db), _=Depends(need("write"))):
+    """The inspector's invoice: to Incoming Invoice Register on OneDrive when it is connected, else kept on the server."""
     inv = db.get(InspectorInvoice, iid)
     if not inv:
         raise HTTPException(404, "Счёт не найден")
-    ext = os.path.splitext(file.filename or "")[1].lower()
-    if ext not in (".pdf", ".png", ".jpg", ".jpeg"):
-        raise HTTPException(422, "Загрузите PDF или изображение")
-    content = await file.read()
-    if len(content) > 15 * 1024 * 1024:
-        raise HTTPException(422, "Файл больше 15 MB")
-    os.makedirs(settings.upload_dir, exist_ok=True)
-    name = f"inv-{iid}-{uuid.uuid4().hex[:8]}{ext}"
-    with open(os.path.join(settings.upload_dir, name), "wb") as f:
-        f.write(content)
-    inv.file_path = name
+    content, ext = await _read_upload(file)
+    if sharepoint.enabled():
+        try:
+            files.upload_incoming(db, inv, file.filename or f"invoice{ext}", content, file.content_type)
+        except sharepoint.GraphError as e:
+            raise HTTPException(502, f"OneDrive: {e}")
+    else:
+        os.makedirs(settings.upload_dir, exist_ok=True)
+        name = f"inv-{iid}-{uuid.uuid4().hex[:8]}{ext}"
+        with open(os.path.join(settings.upload_dir, name), "wb") as f:
+            f.write(content)
+        inv.file_path = name
     _commit(db)
-    return {"ok": True}
+    return {"ok": True, "url": inv.sp_file_url}
 
 
 @r.get("/inspector-invoices/{iid}/file")
 def download_file(iid: int, db: Session = Depends(get_db), _=Depends(need("read"))):
     inv = db.get(InspectorInvoice, iid)
+    if inv and inv.sp_file_url:
+        return RedirectResponse(inv.sp_file_url)
     if not inv or not inv.file_path:
         raise HTTPException(404, "Файл не загружен")
     return FileResponse(os.path.join(settings.upload_dir, inv.file_path))
+
+
+@r.post("/sales-invoices/{iid}/file")
+async def upload_sales_file(iid: int, file: UploadFile = File(...), db: Session = Depends(get_db), _=Depends(need("write"))):
+    """Our invoice to the client: to Outgoing Invoice Register / month / client on OneDrive."""
+    inv = db.get(SalesInvoice, iid)
+    if not inv:
+        raise HTTPException(404, "Инвойс не найден")
+    if not sharepoint.enabled():
+        raise HTTPException(400, "Хранилище файлов не подключено")
+    content, ext = await _read_upload(file)
+    try:
+        files.upload_outgoing(db, inv, file.filename or f"invoice{ext}", content, file.content_type)
+    except sharepoint.GraphError as e:
+        raise HTTPException(502, f"OneDrive: {e}")
+    _commit(db)
+    return {"ok": True, "url": inv.sp_file_url}
+
+
+@r.get("/files/status")
+def files_status(db: Session = Depends(get_db), _=Depends(need("settings"))):
+    """Check the OneDrive connection: token, drive and the EBFI folder."""
+    if not sharepoint.enabled():
+        return {"enabled": False, "message": "Не заданы MS_TENANT_ID / MS_CLIENT_ID / MS_CLIENT_SECRET / MS_SITE_ID в .env"}
+    try:
+        g = sharepoint.graph()
+        root = g.item(settings.ms_root)
+        years = [c["name"] for c in g.children(root["id"]) if "folder" in c] if root else []
+        return {"enabled": True, "ok": True, "root": root.get("webUrl") if root else None, "folders": years}
+    except sharepoint.GraphError as e:
+        return {"enabled": True, "ok": False, "message": str(e)}
+
+
+@r.post("/files/sync-numbers")
+def files_sync_numbers(db: Session = Depends(get_db), _=Depends(need("settings"))):
+    """Take the job numbers already used on the server into the number queues."""
+    if not sharepoint.enabled():
+        raise HTTPException(400, "Хранилище файлов не подключено")
+    try:
+        return {"queues": files.sync_numbers(db)}
+    except sharepoint.GraphError as e:
+        raise HTTPException(502, f"OneDrive: {e}")

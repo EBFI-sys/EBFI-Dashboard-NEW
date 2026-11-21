@@ -3,6 +3,14 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 STEPS = [
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS sp_folder VARCHAR(200)",
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS sp_folder_id VARCHAR(100)",
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS sp_folder_url TEXT",
+    "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS sp_error TEXT",
+    "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS sp_file_id VARCHAR(100)",
+    "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS sp_file_url TEXT",
+    "ALTER TABLE inspector_invoices ADD COLUMN IF NOT EXISTS sp_file_id VARCHAR(100)",
+    "ALTER TABLE inspector_invoices ADD COLUMN IF NOT EXISTS sp_file_url TEXT",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS address TEXT",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS wht BOOLEAN NOT NULL DEFAULT false",
     "ALTER TABLE job_lines ADD COLUMN IF NOT EXISTS snap_wht NUMERIC(12, 4)",

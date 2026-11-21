@@ -3,11 +3,12 @@ import re
 
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import clock
+from .. import files, sharepoint
 from ..calc import Context, compute_line
 from ..dates import format_dates, parse_dates
 from ..db import get_db
@@ -85,6 +86,7 @@ def create_job_from_request(rid: int, data: dict, db: Session = Depends(get_db),
     if len(inspectors) == 1:
         req.inspector_id = inspectors[0]
     _commit(db)
+    files.ensure_job_folder(db, job)
     return job_dict(job, db, Context(db))
 
 
@@ -153,6 +155,7 @@ def job_dict(job: Job, db: Session, ctx: Context, with_lines: bool = False) -> d
         t["base_inr"] += c["base_inr"] or 0
         t["net_inr"] += c["net_inr"] or 0
     d["assignments"] = assignments(job, db, ctx)
+    d["files_enabled"] = sharepoint.enabled()
     if with_lines:
         d["lines"] = out_lines
         d["sales_invoices"] = [to_dict(s) for s in db.scalars(
@@ -202,6 +205,7 @@ def create_job(data: dict, db: Session = Depends(get_db), user: User = Depends(n
     remember_vendor(db, job.vendor, job.country)
     db.add(job)
     _commit(db)
+    files.ensure_job_folder(db, job)
     return job_dict(job, db, Context(db))
 
 
@@ -215,6 +219,7 @@ def update_job(jid: int, data: dict, db: Session = Depends(get_db), _=Depends(ne
     remember_country(db, job.country)
     remember_vendor(db, job.vendor, job.country)
     _commit(db)
+    files.ensure_job_folder(db, job)
     return job_dict(job, db, Context(db))
 
 
@@ -250,6 +255,7 @@ def delete_job(jid: int, db: Session = Depends(get_db), _=Depends(need("delete_w
         req.notes = "\n".join(x for x in [req.notes, f"Работа {job.job_number} удалена из Табеля"] if x)
     _drop(job, lines)
     _commit(db)
+    files.archive_job_folder(db, job)
     return {"ok": True}
 
 
@@ -278,6 +284,7 @@ def job_to_request(jid: int, db: Session = Depends(get_db), user: User = Depends
     req.notes = "\n".join(x for x in [req.notes, note] if x)
     _drop(job, lines)
     _commit(db)
+    files.archive_job_folder(db, job)
     return {"ok": True, "request_id": req.id}
 
 
@@ -493,6 +500,7 @@ def put_assignment(jid: int, grp: int, data: dict, db: Session = Depends(get_db)
         raise HTTPException(404, "Работа не найдена")
     sync_assignment(db, job, grp, data)
     _commit(db)
+    files.ensure_job_folder(db, job)
     return job_dict(job, db, Context(db), with_lines=True)
 
 
@@ -504,6 +512,7 @@ def add_assignment(jid: int, data: dict, db: Session = Depends(get_db), _=Depend
     grp = max((l.grp or 1 for l in job.lines if not l.deleted), default=0) + 1
     sync_assignment(db, job, grp, data)
     _commit(db)
+    files.ensure_job_folder(db, job)
     return job_dict(job, db, Context(db), with_lines=True)
 
 
@@ -519,7 +528,61 @@ def delete_assignment(jid: int, grp: int, db: Session = Depends(get_db), _=Depen
                 raise HTTPException(400, "Есть закрытый месяц или инвойс клиенту — удалить нельзя")
             l.deleted = True
     _commit(db)
+    files.ensure_job_folder(db, job)
     return job_dict(job, db, Context(db), with_lines=True)
+
+
+# ---------------------------------------------------------------- job documents on OneDrive
+def _job_with_folder(jid: int, db: Session) -> Job:
+    if not sharepoint.enabled():
+        raise HTTPException(400, "Хранилище файлов не подключено (нет настроек Microsoft 365 на сервере)")
+    job = db.get(Job, jid)
+    if not job or job.deleted:
+        raise HTTPException(404, "Работа не найдена")
+    if not job.sp_folder_id:
+        files.ensure_job_folder(db, job)
+    if not job.sp_folder_id:
+        raise HTTPException(502, job.sp_error or "Папка работы не создана")
+    return job
+
+
+@r.post("/jobs/{jid}/folder")
+def job_folder(jid: int, db: Session = Depends(get_db), _=Depends(need("write"))):
+    """Create, find or rename the job folder now (the «Повторить» button)."""
+    job = db.get(Job, jid)
+    if not job or job.deleted:
+        raise HTTPException(404, "Работа не найдена")
+    if not sharepoint.enabled():
+        raise HTTPException(400, "Хранилище файлов не подключено")
+    files.ensure_job_folder(db, job)
+    if job.sp_error:
+        raise HTTPException(502, job.sp_error)
+    return {"url": job.sp_folder_url}
+
+
+@r.get("/jobs/{jid}/files")
+def job_files(jid: int, db: Session = Depends(get_db), _=Depends(need("read"))):
+    job = _job_with_folder(jid, db)
+    try:
+        return {"url": job.sp_folder_url, "folders": files.job_files(job)}
+    except sharepoint.GraphError as e:
+        raise HTTPException(502, f"OneDrive: {e}")
+
+
+@r.post("/jobs/{jid}/files")
+async def upload_job_file(jid: int, folder: str = Form(...), file: UploadFile = File(...),
+                          db: Session = Depends(get_db), _=Depends(need("write"))):
+    job = _job_with_folder(jid, db)
+    content = await file.read()
+    if len(content) > 250 * 1024 * 1024:
+        raise HTTPException(422, "Файл больше 250 MB")
+    try:
+        item = files.upload_to_job(job, folder, file.filename or "file", content, file.content_type)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except sharepoint.GraphError as e:
+        raise HTTPException(502, f"OneDrive: {e}")
+    return {"name": item.get("name"), "url": item.get("webUrl")}
 
 
 # ---------------------------------------------------------------- calendar of agreed dates

@@ -88,7 +88,8 @@ class Client(Base, TimestampMixin, SoftDelete):
     job_code: Mapped[str | None] = mapped_column(String(4))
     color: Mapped[str | None] = mapped_column(String(9))  # label colour in the Табель, #rrggbb
     address: Mapped[str | None] = mapped_column(Text)  # billing address printed on invoices
-    wht: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # client withholds WHT (5%)  # KK in job number YY.KK-NNN; shared by e.g. all BV entities
+    wht: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")  # client withholds WHT (5%)
+    sp_folder: Mapped[str | None] = mapped_column(String(200))  # name of its folder on the server, e.g. «TUV R QATAR»  # KK in job number YY.KK-NNN; shared by e.g. all BV entities
     contact_name: Mapped[str | None] = mapped_column(String(120))
     contact_email: Mapped[str | None] = mapped_column(String(200))
     notes: Mapped[str | None] = mapped_column(Text)
@@ -168,6 +169,9 @@ class Job(Base, TimestampMixin, SoftDelete):
     owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     status: Mapped[str] = mapped_column(String(20), default="В работе")  # В работе | Пауза | Сдан
     pre_november: Mapped[bool] = mapped_column(Boolean, default=False)  # opened before the system
+    sp_folder_id: Mapped[str | None] = mapped_column(String(100))  # OneDrive folder of the job (id survives renames)
+    sp_folder_url: Mapped[str | None] = mapped_column(Text)
+    sp_error: Mapped[str | None] = mapped_column(Text)  # last failure talking to OneDrive, shown on the job card
     notes: Mapped[str | None] = mapped_column(Text)
     lines: Mapped[list["JobLine"]] = relationship(back_populates="job", order_by="JobLine.month")
     client: Mapped[Client] = relationship()
@@ -215,6 +219,8 @@ class SalesInvoice(Base, TimestampMixin, SoftDelete):
     currency: Mapped[str] = mapped_column(String(3))
     amount: Mapped[Decimal] = mapped_column(Money)  # without GST, in invoice currency
     status: Mapped[str] = mapped_column(String(30), default="Not Verified")  # Not Verified | Отправлен клиенту | Paid
+    sp_file_id: Mapped[str | None] = mapped_column(String(100))  # the invoice PDF in Outgoing Invoice Register
+    sp_file_url: Mapped[str | None] = mapped_column(Text)
     received_amount: Mapped[Decimal | None] = mapped_column(Money)
     payment_date: Mapped[dt.date | None] = mapped_column(Date)
     fx_rate: Mapped[Decimal | None] = mapped_column(Rate)
@@ -257,6 +263,8 @@ class InspectorInvoice(Base, TimestampMixin, SoftDelete):
     paid: Mapped[bool] = mapped_column(Boolean, default=False)
     paid_date: Mapped[dt.date | None] = mapped_column(Date)
     file_path: Mapped[str | None] = mapped_column(String(300))
+    sp_file_id: Mapped[str | None] = mapped_column(String(100))  # the invoice PDF in Incoming Invoice Register
+    sp_file_url: Mapped[str | None] = mapped_column(Text)
     comment: Mapped[str | None] = mapped_column(Text)
     jobs: Mapped[list[Job]] = relationship(secondary=inspector_invoice_jobs)
 

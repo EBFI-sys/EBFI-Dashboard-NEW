@@ -28,6 +28,11 @@ services:
       COOKIE_SECURE: "true"
       UPLOAD_DIR: /data/uploads
       TZ: Asia/Kolkata
+      MS_TENANT_ID: ${MS_TENANT_ID:-}
+      MS_CLIENT_ID: ${MS_CLIENT_ID:-}
+      MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
+      MS_SITE_ID: ${MS_SITE_ID:-}
+      MS_ROOT: ${MS_ROOT:-EBFI}
     volumes:
       - uploads:/data/uploads
       - ./import:/data/import:ro

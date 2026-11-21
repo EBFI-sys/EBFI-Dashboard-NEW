@@ -9,6 +9,12 @@ class Settings:
     session_hours: int = int(os.getenv("SESSION_HOURS", "12"))
     cookie_secure: bool = os.getenv("COOKIE_SECURE", "true").lower() == "true"
     upload_dir: str = os.getenv("UPLOAD_DIR", "/data/uploads")
+    # Microsoft 365 (Entra app «EBFI ERP» with Sites.Selected on the admin's OneDrive); empty = files feature off
+    ms_tenant_id: str = os.getenv("MS_TENANT_ID", "")
+    ms_client_id: str = os.getenv("MS_CLIENT_ID", "")
+    ms_client_secret: str = os.getenv("MS_CLIENT_SECRET", "")
+    ms_site_id: str = os.getenv("MS_SITE_ID", "")
+    ms_root: str = os.getenv("MS_ROOT", "EBFI")  # top folder in that OneDrive
     max_failed_logins: int = 5
     lockout_minutes: int = 15
 

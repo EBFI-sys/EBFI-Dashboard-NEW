@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, inr, money, monthLabel, thisMonth, today } from "../api";
 import CrudTable, { Field } from "../components/CrudTable";
+import { InvoiceFile } from "../components/Files";
 import { ErrorLine, Modal, useAsync } from "../components/ui";
 import { CURRENCIES, useRef_ } from "../refs";
 
@@ -31,7 +32,8 @@ export default function Sales() {
         <p className="lede">GST считается автоматически для клиентов из Индии: CGST + SGST в своём штате, IGST — в другом. Для каждого такого инвойса создаётся запись в реестре TDS.</p></div></header>
       <CrudTable periodKey="date" endpoint="/sales-invoices" title="Реестр инвойсов" fields={fields} csvName="sales-invoices.csv"
         defaults={{ status: "Not Verified", date: today(), currency: "USD", number: next.data?.number }}
-        toolbar={(_, reload) => <button className="btn" onClick={() => setFromLines(() => () => { reload(); next.reload(); })}>Инвойс из работ</button>} />
+        toolbar={(_, reload) => <button className="btn" onClick={() => setFromLines(() => () => { reload(); next.reload(); })}>Инвойс из работ</button>}
+        rowActions={(r, reload) => <InvoiceFile url={r.file_url} uploadUrl={`/api/sales-invoices/${r.id}/file`} reload={reload} />} />
       {fromLines && <FromLines onClose={() => setFromLines(null)} onDone={fromLines} />}
     </div>
   );

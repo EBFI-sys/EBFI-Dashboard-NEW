@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, dateLabel, money, monthLabel, num, pct } from "../api";
 import { useAuth } from "../auth";
 import { ClientChip, OwnerChip } from "../components/Chips";
+import { JobDocuments } from "../components/Files";
 import { EditForm, Field, FieldInput } from "../components/CrudTable";
 import DataTable, { Col } from "../components/DataTable";
 import { ErrorLine, Modal, Pill, Toast, useAsync } from "../components/ui";
@@ -23,7 +24,7 @@ const A = {
   overtime_client: F({ key: "overtime_client", label: "Overtime клиенту (сумма)", type: "money" }),
   overtime_inspector: F({ key: "overtime_inspector", label: "Overtime инспектору (сумма)", type: "money" }),
   no_subcontractor: F({ key: "no_subcontractor", label: "Без подрядчика", type: "bool" }),
-  payment_method_id: F({ key: "payment_method_id", label: "Способ оплаты инспектору (для РКО)", type: "ref", ref: "payment-methods" }),
+  payment_method_id: F({ key: "payment_method_id", label: "Метод оплаты инспектору (для РКО)", type: "ref", ref: "payment-methods" }),
   rko_override_inr: F({ key: "rko_override_inr", label: "РКО вручную, ₹", type: "money" }),
   notes: F({ key: "notes", label: "Примечания к инспектору", type: "textarea" }),
 };
@@ -213,6 +214,8 @@ export default function JobCard() {
           <Assignment key={a.grp} job={j} a={a} canWrite={can("write")} canDelete={can("delete_work") && j.assignments.length > 1} onSaved={saved} />
         ))}
       </section>
+
+      <JobDocuments job={j} canWrite={can("write")} onLinked={reload} />
 
       <div className="kpis">
         <div className="kpi card"><span className="kpi-label">Выручка</span><span className="kpi-value">{money(total("base_inr"), cur)}</span></div>
