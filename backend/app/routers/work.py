@@ -134,7 +134,8 @@ def job_next_number(client_id: int, db: Session = Depends(get_db), _=Depends(nee
 def _view(job: Job, lines: list[JobLine], month: str) -> dict:
     """The job as the Табель of one month shows it: only the days of that month."""
     ls = [l for l in lines if l.month == month]
-    return {"month": month, "dates": sorted({x.isoformat() for l in ls for x in parse_dates(l.dates_text, l.month)}),
+    return {"month": month, "dates": sorted({x.isoformat() for l in ls for x in parse_dates(l.dates_text, l.month)
+                                             if x.strftime("%Y-%m") == month}),
             "man_days": float(sum(Decimal(l.quantity or 0) for l in ls if l.unit == "day")),
             "quantity": float(sum(Decimal(l.quantity or 0) for l in ls)),
             "dates_text": "; ".join(l.dates_text for l in ls if l.dates_text) or None}
@@ -213,12 +214,20 @@ def list_jobs(status: str | None = None, q: str | None = None, month: str | None
     out = []
     for j in db.scalars(stmt):
         months = {l.month for l in j.lines if not l.deleted}
-        carried = bool(month and month == _this_month() and months and max(months) < month and j.status != "Завершен")
-        if month and month not in months and not carried:
+        if month and month not in months:
             continue
-        d = job_dict(j, db, ctx, month=month, shut=shut, users=users)
-        d["carried"] = carried
-        out.append(d)
+        out.append(job_dict(j, db, ctx, month=month, shut=shut, users=users))
+    return out
+
+
+@r.get("/jobs/unfinished")
+def unfinished_jobs(before: str, db: Session = Depends(get_db), _=Depends(need("read"))):
+    """Jobs not «Завершен» whose dates are all in months before `before`: shown above the Табель as a reminder."""
+    out = []
+    for j in db.scalars(select(Job).where(Job.deleted.is_(False), Job.status != "Завершен").order_by(Job.job_number)):
+        months = {l.month for l in j.lines if not l.deleted}
+        if months and max(months) < before:
+            out.append({"id": j.id, "job_number": j.job_number, "month": max(months)})
     return out
 
 
@@ -519,8 +528,18 @@ def sync_assignment(db: Session, job: Job, grp: int, data: dict, strict: bool = 
     last = max(plan) if plan else None
     out = []
     for m, spec in sorted(plan.items()):
-        line = have.get(m) or JobLine(job_id=job.id, month=m, grp=grp)
+        line = have.get(m)
         vals = {k: data[k] for k in COMMON if k in data}
+        if line is None:  # a new month of the assignment: same inspector, currencies and rates as its other months
+            line = JobLine(job_id=job.id, month=m, grp=grp)
+            tpl = lines[-1] if lines else None
+            for k in COMMON:
+                if k not in vals and k != "notes":
+                    vals[k] = getattr(tpl, k) if tpl else None
+            vals["currency"] = vals.get("currency") or "USD"
+            vals["client_rate"] = vals.get("client_rate") or 0
+            vals["inspector_rate"] = vals.get("inspector_rate") or 0
+            vals["no_subcontractor"] = bool(vals.get("no_subcontractor"))
         vals.update(spec, unit=unit)
         for k in LAST_ONLY:
             if k in data:
@@ -547,14 +566,18 @@ def sync_assignment(db: Session, job: Job, grp: int, data: dict, strict: bool = 
 
 
 def fill_from_dates(db: Session) -> int:
-    """Open-month day lines with dates but 0 MD (dates typed in words before the parser understood them):
-    count the days and store the dates in the standard form. Runs at start-up; touches nothing else."""
+    """Open-month day lines that do not match their dates: 0 MD with dates (dates typed in words before the parser
+    understood them, or booked ahead), or dates of other months in the line (imported «30.11, 07.12, 15.12»).
+    The assignment is rebuilt from its dates: each month gets its own days. Runs at start-up; touches nothing else."""
     closed = {m.month for m in db.scalars(select(MonthClose))}
     n = 0
-    for l in list(db.scalars(select(JobLine).where(JobLine.deleted.is_(False), JobLine.unit == "day", JobLine.quantity == 0,
+    for l in list(db.scalars(select(JobLine).where(JobLine.deleted.is_(False), JobLine.unit == "day",
                                               JobLine.dates_text.is_not(None)))):
         ds = parse_dates(l.dates_text, l.month)
         if l.month in closed or not ds or any(d.strftime("%Y-%m") in closed for d in ds):
+            continue
+        other = any(d.strftime("%Y-%m") != l.month for d in ds)
+        if not (float(l.quantity or 0) == 0 or (other and float(l.quantity) == len(ds))):
             continue
         group = [x for x in l.job.lines if not x.deleted and (x.grp or 1) == (l.grp or 1)]
         if len(group) == 1:  # a single-month assignment: rebuild it from its dates (may move to the right month)

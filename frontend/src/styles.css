@@ -448,3 +448,23 @@ tr.late:hover > td { background: rgba(168, 85, 247, 0.26) !important; }
 .banner.late p { margin: 4px 0; }
 [data-theme="light"] .pill.late-pill { color: #7e22ce; }
 [data-theme="light"] tr.late > td { background: rgba(168, 85, 247, 0.12) !important; }
+
+/* статус работы в карточке */
+.status-switch { display: inline-flex; padding: 3px; gap: 3px; border-radius: 999px; background: rgba(127, 127, 127, 0.08); border: 1px solid var(--line); }
+.status-switch button { border: 1px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 500;
+  padding: 4px 12px; border-radius: 999px; cursor: pointer; transition: background .15s, color .15s, border-color .15s; white-space: nowrap; }
+.status-switch button:hover:not(:disabled):not(.on) { color: var(--ink-strong); background: rgba(127, 127, 127, 0.1); }
+.status-switch button.on { cursor: default; }
+.status-switch button.on.warn { color: var(--warn); background: rgba(var(--warn-rgb), 0.14); border-color: rgba(var(--warn-rgb), 0.4); }
+.status-switch button.on.ok { color: var(--ok); background: rgba(var(--ok-rgb), 0.14); border-color: rgba(var(--ok-rgb), 0.4); }
+.status-switch button.on.mute { color: var(--ink-strong); background: rgba(127, 127, 127, 0.16); border-color: var(--line-hi); }
+.status-switch button:disabled:not(.on) { cursor: default; opacity: .6; }
+.late-hint { display: block; margin-top: 6px; color: #c084fc; font-size: 11px; }
+[data-theme="light"] .late-hint { color: #7e22ce; }
+.banner.unfinished { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 13px; margin: 0 0 10px; }
+.job-link { background: rgba(168, 85, 247, 0.14); border: 1px solid rgba(168, 85, 247, 0.45); color: inherit; border-radius: 8px; padding: 2px 8px; cursor: pointer; font-size: 12px; }
+.job-link:hover { background: rgba(168, 85, 247, 0.28); }
+.facts-status { grid-column: span 2; }
+.facts div.status-switch, .status-switch { display: inline-flex; flex-direction: row; flex-wrap: nowrap; width: max-content; max-width: 100%; }
+.status-switch button { flex: none; width: auto; display: inline-block; }
+@media (max-width: 720px) { .facts-status { grid-column: 1 / -1; } }

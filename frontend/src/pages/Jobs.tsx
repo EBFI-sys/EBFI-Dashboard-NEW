@@ -7,7 +7,7 @@ import { ClientChip, OwnerChip } from "../components/Chips";
 import { EditForm, Field } from "../components/CrudTable";
 import DataTable, { Col } from "../components/DataTable";
 import { ErrorLine, Pill, useAsync } from "../components/ui";
-import { CURRENCIES, JOB_STATUSES, loadRef, useRef_ } from "../refs";
+import { CURRENCIES, loadRef, useRef_ } from "../refs";
 
 export const jobFields: Field[] = [
   { key: "client_id", label: "Клиент", type: "ref", ref: "clients", required: true },
@@ -17,7 +17,6 @@ export const jobFields: Field[] = [
   { key: "vendor", label: "Завод (Vendor)", type: "suggest", ref: "vendors", wide: true, hint: "Начните вводить — система предложит заводы из справочника; новый завод добавится сам" },
   { key: "country", label: "Страна", type: "suggest", ref: "countries" },
   { key: "owner_id", label: "Чья", type: "ref", ref: "users", refLabel: "initials" },
-  { key: "status", label: "Статус", type: "select", options: JOB_STATUSES, required: true },
   { key: "notes", label: "Примечания", type: "textarea" },
 ];
 
@@ -56,11 +55,12 @@ export default function Jobs() {
   const [cal, setCal] = useState(false);
   const [dates, setDates] = useState<any | null>(null);
   const [visible, setVisible] = useState<any[]>([]);
+  const unfinished = useAsync(() => month ? api.get<any[]>(`/jobs/unfinished?before=${month}`) : Promise.resolve([]), [month]);
   const { data, error, loading, reload } = useAsync(() => api.get<any[]>(`/jobs?status=${encodeURIComponent(status)}${month ? `&month=${month}` : ""}`), [status, month]);
 
   const rows = useMemo(() => (data ?? []).map((j) => {
     const as = j.assignments ?? [];
-    const v = month && !j.carried ? j.view : null;  // the month's part of the job
+    const v = month ? j.view : null;  // the month's part of the job
     const ds: string[] = v ? v.dates : j.dates ?? [];
     return {
       ...j, md: v ? v.man_days : j.totals.man_days, ds, date_text: compactDates(ds, 99),
@@ -88,7 +88,7 @@ export default function Jobs() {
       key: "date_text", label: month ? "Дата (" + monthLabel(month).split(" ")[0].toLowerCase() + ")" : "Дата", text: (j) => j.date_text || null,
       render: (j) => (
         <button type="button" className={"date-cell" + (j.ds?.length ? "" : " empty-dates")}
-          title={j.carried ? "Все даты в прошлых месяцах — работа не завершена" : "Открыть календарь дат инспекции"}
+          title="Открыть календарь дат инспекции"
           onClick={(e) => { e.stopPropagation(); setDates(j); }}>
           {j.ds?.length ? compactDates(j.ds)
             : (j.assignments ?? []).map((a: any) => a.dates_text).filter(Boolean).join("; ") || "указать даты"}
@@ -144,8 +144,15 @@ export default function Jobs() {
           {can("write") && <button className="btn primary" onClick={() => setAdd(true)}>Новая работа</button>}
         </div>
         <ErrorLine error={error} />
+        {(unfinished.data ?? []).length > 0 && (
+          <div className="banner late unfinished">
+            <span>Не завершены работы прошлых месяцев ({unfinished.data!.length}):</span>
+            {unfinished.data!.map((u) => (
+              <button key={u.id} className="job-link mono" title={`Последний месяц работы — ${monthLabel(u.month)}`} onClick={() => nav(`/jobs/${u.id}`)}>{u.job_number}</button>
+            ))}
+          </div>
+        )}
         {month && <p className="muted small table-note">{monthLabel(month)}: только работы с днями в этом месяце, даты и MD — за этот месяц.
-          {month === thisMonth() && " Незавершённые работы, у которых все даты в прошлых месяцах, тоже здесь, пока их не завершат."}
           {" "}<span className="late-key" /> — изменён закрытый месяц или работа не завершена после закрытия месяца.</p>}
         <DataTable rows={rows} cols={cols} onRowClick={(j) => nav(`/jobs/${j.id}`)} onVisible={setVisible}
           rowClass={(j) => (j.flag ? "late" : undefined)}

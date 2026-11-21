@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, dateLabel, money, monthLabel, num, pct } from "../api";
+import { api, dateLabel, money, monthLabel, num, pct, today } from "../api";
 import { useAuth } from "../auth";
 import { ClientChip, OwnerChip } from "../components/Chips";
 import { JobDocuments } from "../components/Files";
@@ -198,6 +198,7 @@ export default function JobCard() {
           <div><dt>Завод</dt><dd>{j.vendor ?? "—"}</dd></div>
           <div><dt>Страна</dt><dd>{j.country ?? "—"}</dd></div>
           <div><dt>Чья</dt><dd><OwnerChip initials={owner} /></dd></div>
+          <div className="facts-status"><dt>Статус работы</dt><dd><StatusSwitch j={j} canWrite={can("write")} onSaved={(nj) => saved({ ...j, ...nj }, `Статус: ${nj.status}`)} /></dd></div>
           <div><dt>Контакт клиента</dt><dd>{j.client_contact ?? "—"}</dd></div>
           <div><dt>Client Job Number</dt><dd>{j.client_job_number ?? "—"}</dd></div>
           {j.notes && <div style={{ gridColumn: "1 / -1" }}><dt>Примечания</dt><dd style={{ whiteSpace: "pre-wrap" }}>{j.notes}</dd></div>}
@@ -262,7 +263,7 @@ export default function JobCard() {
 
       {editJob && <EditForm title="Данные работы" fields={jobFields} initial={j} onCancel={() => setEditJob(false)}
         onSave={async (d) => {
-          const body = Object.fromEntries(Object.entries(d).filter(([k]) => !["lines", "assignments", "totals", "totals_by_month", "line_summary", "dates", "months", "sales_invoices", "inspector_invoices"].includes(k)));
+          const body = Object.fromEntries(Object.entries(d).filter(([k]) => !["lines", "assignments", "totals", "totals_by_month", "line_summary", "dates", "months", "sales_invoices", "inspector_invoices", "status"].includes(k)));
           await api.patch(`/jobs/${j.id}`, body); setEditJob(false); setToast("Сохранено"); reload();
         }} />}
       {remove && <RemoveJob job={j} mode={remove} onClose={() => setRemove(null)} onDone={(to) => nav(to)} />}
@@ -324,5 +325,41 @@ function LateBanner({ j, canClear, onCleared }: { j: any; canClear: boolean; onC
       )}
       {err && <p className="error">{err}</p>}
     </div>
+  );
+}
+
+const STATUS_CLS: Record<string, string> = { "В работе": "warn", Пауза: "mute", Завершен: "ok" };
+
+/** The job status right on the card: one click, saved at once. */
+function StatusSwitch({ j, canWrite, onSaved }: { j: any; canWrite: boolean; onSaved: (job: any) => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const future = j.last_date && j.last_date > today();
+  const set = async (st: string) => {
+    if (st === j.status || busy) return;
+    setBusy(st);
+    setErr(null);
+    try {
+      onSaved(await api.patch(`/jobs/${j.id}`, { status: st }));
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <>
+      <div className="status-switch" role="radiogroup" aria-label="Статус работы">
+        {["В работе", "Пауза", "Завершен"].map((st) => (
+          <button key={st} type="button" role="radio" aria-checked={j.status === st} disabled={!canWrite || !!busy}
+            className={STATUS_CLS[st] + (j.status === st ? " on" : "")} onClick={() => set(st)}
+            title={st === "Завершен" && future ? `Есть даты впереди (последняя ${j.last_date.split("-").reverse().join(".")})` : undefined}>
+            {busy === st ? "…" : st}
+          </button>
+        ))}
+      </div>
+      {j.status !== "Завершен" && j.dates_passed && <small className="late-hint">Все даты прошли — завершите работу</small>}
+      {err && <small className="error">{err}</small>}
+    </>
   );
 }
