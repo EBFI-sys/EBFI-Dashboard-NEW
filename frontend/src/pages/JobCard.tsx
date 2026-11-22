@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, dateLabel, money, monthLabel, num, pct, today } from "../api";
 import { useAuth } from "../auth";
 import { ClientChip, OwnerChip } from "../components/Chips";
@@ -130,6 +130,7 @@ export default function JobCard() {
   const [editJob, setEditJob] = useState(false);
   const [remove, setRemove] = useState<null | "request" | "delete">(null);
   const nav = useNavigate();
+  const loc = useLocation();
   const [toast, setToast] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const { cur, conv, fmt } = useCurrency();
@@ -179,7 +180,10 @@ export default function JobCard() {
     <div className="page">
       <header className="page-head">
         <div>
-          <p className="crumbs"><Link to="/jobs">Табель</Link> /</p>
+          <p className="crumbs">
+            <button type="button" className="back-btn" onClick={() => (loc.key !== "default" ? nav(-1) : nav("/jobs"))} aria-label="Назад">‹ Назад</button>
+            <Link to="/jobs">Табель</Link> /
+          </p>
           <h1 className="mono">{j.job_number} <Pill status={j.status} /></h1>
         </div>
         <div className="head-actions">

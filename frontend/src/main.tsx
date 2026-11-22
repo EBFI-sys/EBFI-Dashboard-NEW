@@ -104,6 +104,22 @@ function KeepAlive() {
       return next.filter((p, i) => i < 10 || pinned.has(p));
     });
   }, [cur, items]);
+  // every page keeps its own scroll position: back from a job card lands where the job was in the list
+  const scrolls = React.useRef<Record<string, number>>({});
+  const curRef = React.useRef(cur);
+  React.useEffect(() => {
+    try { window.history.scrollRestoration = "manual"; } catch { /* old browsers */ }
+    const onScroll = () => { scrolls.current[curRef.current] = window.scrollY; };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  React.useLayoutEffect(() => {
+    curRef.current = cur;
+    const y = scrolls.current[cur] ?? 0;
+    window.scrollTo(0, y);
+    const t = setTimeout(() => window.scrollTo(0, scrolls.current[cur] ?? y), 60); // after the page has drawn
+    return () => clearTimeout(t);
+  }, [cur]);
   const paths = order.includes(cur) ? order : [cur, ...order];
   // stable render order, so React keeps every page's state while the visit order changes
   const sorted = [...paths].sort();

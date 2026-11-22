@@ -218,13 +218,15 @@ function Wrap({ as, children, ...rest }: { as: "div" | "label"; children: React.
   return as === "div" ? <div {...rest}>{children}</div> : <label {...rest}>{children}</label>;
 }
 
-export function EditForm({ fields, initial, onSave, onCancel, title, onFieldChange }: {
+export function EditForm({ fields, initial, onSave, onCancel, title, onFieldChange, onDelete }: {
   fields: Field[]; initial: any; onSave: (d: any) => Promise<void>; onCancel: () => void; title: string;
+  onDelete?: () => Promise<void>; // shows «Удалить» in the footer, with a confirmation
   onFieldChange?: (key: string, value: any, data: any) => Promise<Record<string, unknown> | void> | Record<string, unknown> | void;
 }) {
   const [data, setData] = useState<any>({ ...initial });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sure, setSure] = useState(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     for (const f of fields) {
@@ -258,9 +260,18 @@ export function EditForm({ fields, initial, onSave, onCancel, title, onFieldChan
           </Wrap>
         ))}
         <ErrorLine error={err} />
-        <div className="form-actions wide">
-          <button type="button" className="btn ghost" onClick={onCancel}>Отмена</button>
-          <button type="submit" className="btn primary" disabled={busy}>{busy ? "Сохраняю…" : "Сохранить"}</button>
+        <div className={"form-actions wide" + (onDelete ? " with-delete" : "")}>
+          {onDelete && (sure ? (
+            <span className="del-confirm">
+              <span className="muted small">Скрыть запись? Останется в журнале.</span>
+              <button type="button" className="btn danger small" onClick={async () => { try { await onDelete(); } catch (e: any) { setErr(e.message); setSure(false); } }}>Да, удалить</button>
+              <button type="button" className="btn ghost small" onClick={() => setSure(false)}>Нет</button>
+            </span>
+          ) : <button type="button" className="btn ghost danger-text del-btn" onClick={() => setSure(true)}>Удалить</button>)}
+          {!sure && <>
+            <button type="button" className="btn ghost" onClick={onCancel}>Отмена</button>
+            <button type="submit" className="btn primary" disabled={busy}>{busy ? "Сохраняю…" : "Сохранить"}</button>
+          </>}
         </div>
       </form>
     </Modal>
@@ -384,29 +395,11 @@ export default function CrudTable(p: Props) {
           {canWrite && <button className="btn small ghost icon" title="Изменить" aria-label="Изменить" onClick={() => setEdit(r)}><Pencil size={14} aria-hidden /></button>}
         </>)} />
       {edit && (
-        <>
-          <EditForm title={edit.id ? "Изменить" : "Новая запись"} fields={p.fields} initial={edit} onSave={save} onCancel={() => setEdit(null)} />
-          {edit.id && can(p.deleteRight ?? "delete") && <DeleteBar onDelete={() => remove(edit)} />}
-        </>
+        <EditForm title={edit.id ? "Изменить" : "Новая запись"} fields={p.fields} initial={edit} onSave={save} onCancel={() => setEdit(null)}
+          onDelete={edit.id && can(p.deleteRight ?? "delete") ? () => remove(edit) : undefined} />
       )}
       <Toast text={toast} onDone={() => setToast(null)} />
     </section>
   );
 }
 
-function DeleteBar({ onDelete }: { onDelete: () => Promise<void> }) {
-  const [sure, setSure] = useState(false);
-  return (
-    <Portal><div className="delete-bar">
-      {sure ? (
-        <>
-          <span>Запись будет скрыта (останется в журнале).</span>
-          <button className="btn danger small" onClick={onDelete}>Да, удалить</button>
-          <button className="btn ghost small" onClick={() => setSure(false)}>Отмена</button>
-        </>
-      ) : (
-        <button className="btn ghost small" onClick={() => setSure(true)}>Удалить запись</button>
-      )}
-    </div></Portal>
-  );
-}

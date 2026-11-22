@@ -44,12 +44,24 @@ export function Modal({ title, onClose, children, wide }: { title: string; onClo
     else tray.drop(id);
   }, [min, title, page.path]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => tray.drop(id), []); // eslint-disable-line react-hooks/exhaustive-deps
+  // phone: the system «back» (swipe from the left edge) closes the dialog instead of leaving the page
+  useEffect(() => {
+    if (!shown || !window.matchMedia("(max-width: 820px)").matches) return;
+    window.history.pushState({ ...(window.history.state ?? {}), ebfiModal: id }, "");
+    const pop = () => { if (window.history.state?.ebfiModal !== id) closeRef.current(); };
+    window.addEventListener("popstate", pop);
+    return () => {
+      window.removeEventListener("popstate", pop);
+      if (window.history.state?.ebfiModal === id) window.history.back();  // closed with a button: drop our history entry
+    };
+  }, [shown, id]);
   // rendered into <body>: glass panels create their own stacking context, so a dialog inside them would be placed
   // relative to the panel instead of the screen. While folded it stays mounted (hidden), so nothing typed is lost.
   return createPortal(
     <div className={"modal-back" + (shown ? "" : " folded")} onMouseDown={(e) => e.target === e.currentTarget && setMin(true)}>
       <div className={"modal" + (wide ? " wide" : "")} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-head">
+          <button className="icon-btn modal-back-btn" onClick={onClose} aria-label="Назад" title="Назад">‹</button>
           <h2>{title}</h2>
           <div className="modal-tools">
             <button className="icon-btn small" onClick={() => setMin(true)} aria-label="Свернуть" title="Свернуть в трей — данные сохранятся">–</button>
