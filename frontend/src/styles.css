@@ -469,7 +469,7 @@ tr.late:hover > td { background: rgba(168, 85, 247, 0.26) !important; }
   body { padding-bottom: env(safe-area-inset-bottom); }
   .shell { grid-template-columns: 1fr; }
   .side { display: none; }
-  .main { padding: calc(8px + env(safe-area-inset-top)) 12px calc(96px + env(safe-area-inset-bottom)); }
+  .main { padding: calc(8px + var(--sat, env(safe-area-inset-top))) 12px calc(96px + env(safe-area-inset-bottom)); }
   .topbar { justify-content: flex-end; margin-bottom: 4px; }
   .ist-clock .ist-date { display: none; }
   h1 { font-size: 24px; }
@@ -521,7 +521,7 @@ tr.late:hover > td { background: rgba(168, 85, 247, 0.26) !important; }
 
   /* dialogs: full-height sheet from the bottom */
   .modal-back { padding: 0; place-items: end stretch; }
-  .modal, .modal.wide { width: 100%; max-height: calc(100dvh - env(safe-area-inset-top) - 12px); border-radius: 18px 18px 0 0; border-bottom: 0; }
+  .modal, .modal.wide { width: 100%; max-height: calc(100dvh - var(--sat, env(safe-area-inset-top)) - 12px); border-radius: 18px 18px 0 0; border-bottom: 0; }
   .modal-head { padding: 14px 16px 10px; }
   .modal-body { padding: 14px 16px calc(18px + env(safe-area-inset-bottom)); }
   .tray { right: 10px; left: 10px; bottom: calc(76px + env(safe-area-inset-bottom)); align-items: stretch; }
@@ -602,7 +602,7 @@ tr.late:hover > td { background: rgba(168, 85, 247, 0.26) !important; }
 .form-actions.with-delete .del-btn { margin-right: auto; }
 @media (max-width: 820px) {
   /* nothing scrolls under the clock / signal / battery */
-  body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top); z-index: 59;
+  body::before { content: ""; position: fixed; top: 0; left: 0; right: 0; height: var(--sat, env(safe-area-inset-top)); z-index: 59;
     background: var(--bg); }
   .mtabs { padding-bottom: max(4px, calc(env(safe-area-inset-bottom) - 12px)); padding-top: 6px; }
   .main { padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
@@ -618,4 +618,30 @@ tr.late:hover > td { background: rgba(168, 85, 247, 0.26) !important; }
   .modal .form-actions .del-btn { flex: 0 0 auto; margin-right: 0; }
   .del-confirm { width: 100%; }
   .del-confirm .btn { flex: 1; }
+}
+
+/* phone list: one format for every row — status · number/client · right; second line muted · dates */
+td.m-row { display: none; }
+@media (max-width: 820px) {
+  table.mcards.mlist.has-mrow td { display: none !important; }
+  table.mcards.mlist.has-mrow td.m-row { display: block !important; width: 100%; }
+  table.mcards.mlist.has-mrow td.m-row::before { display: none; }
+  table.mcards.mlist.has-mrow tr { padding: 10px 2px; }
+  .lrow { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 10px; row-gap: 4px; align-items: center; width: 100%; }
+  .lrow .pill { margin: 0; font-size: 10.5px; padding: 1px 8px; justify-self: start; min-width: 74px; text-align: center; }
+  .lrow-no { font-size: 14.5px; font-weight: 600; color: var(--ink-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lrow-right { justify-self: end; text-align: right; white-space: nowrap; }
+  .lrow-right .chip, .lrow-right [class*="chip"] { margin: 0; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
+  .lrow-sub { grid-column: 1 / 3; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lrow-dates { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
+  .lrow-actions { display: inline-flex; gap: 6px; }
+  .lrow-actions .btn { min-height: 28px; padding: 3px 9px; font-size: 12px; }
+}
+@media (max-width: 820px) { .lrow .chip { display: inline-flex; white-space: nowrap; font-size: 12px; } }
+@media (max-width: 820px) {
+  .lrow.lrow-job { grid-template-columns: auto auto minmax(0, 1fr); }
+  .lrow.lrow-job .lrow-no { overflow: visible; }
+  .lrow.lrow-job .lrow-right .chip { max-width: 100%; overflow: hidden; display: inline-flex; vertical-align: middle; }
+  .lrow.lrow-job .lrow-right { min-width: 0; max-width: 100%; }
+  .lrow.lrow-job .lrow-dates { max-width: 60vw; }
 }

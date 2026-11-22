@@ -21,6 +21,25 @@
     <script>
       // the ERP is laid out for the phone: no pinch or double-tap zoom (iOS ignores user-scalable=no on its own)
       document.addEventListener("gesturestart", function (e) { e.preventDefault(); }, { passive: false });
+      // height of the iPhone status bar over the page. Home-screen apps on recent iOS draw it over the page while
+      // reporting a zero safe area, so it is measured here and the page keeps clear of it (--sat).
+      (function () {
+        function sat() {
+          var probe = document.createElement("div");
+          probe.style.cssText = "position:fixed;top:0;height:0;padding-top:env(safe-area-inset-top);visibility:hidden";
+          document.body.appendChild(probe);
+          var env = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+          probe.remove();
+          var standalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+          var ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+          var top = env;
+          if (!env && standalone && ios && window.innerHeight >= screen.height - 2) top = screen.height >= 812 ? 54 : 20;
+          document.documentElement.style.setProperty("--sat", top + "px");
+        }
+        sat();
+        window.addEventListener("resize", sat);
+        window.addEventListener("orientationchange", function () { setTimeout(sat, 300); });
+      })();
       document.addEventListener("touchmove", function (e) { if (e.scale && e.scale !== 1) e.preventDefault(); }, { passive: false });
     </script>
     <div id="root"></div>

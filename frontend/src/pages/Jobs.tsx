@@ -31,6 +31,11 @@ const firstAssignment: Field[] = [
   { key: "a_inspector_currency", label: "Валюта инспектора", type: "select", options: CURRENCIES, required: true },
 ];
 
+/** «Markus Ehrmann, Yurii Kondrus» → «Ehrmann, Kondrus» for the phone list */
+export function surnames(names: string | null | undefined) {
+  return (names ?? "").split(",").map((n) => n.trim().split(/\s+/).pop()).filter(Boolean).join(", ");
+}
+
 /** "500 USD" for one rate, "500 / 450 USD" when the inspectors differ */
 export function rateText(as: any[], rate: string, cur: string) {
   const vals = [...new Set(as.filter((a) => a[rate]).map((a) => `${num(a[rate], 2).replace(/\.00$/, "")}|${a[cur]}`))];
@@ -162,7 +167,15 @@ export default function Jobs() {
         )}
         {month && <p className="muted small table-note">{monthLabel(month)}: только работы с днями в этом месяце, даты и MD — за этот месяц.
           {" "}<span className="late-key" /> — изменён закрытый месяц или работа не завершена после закрытия месяца.</p>}
-        <DataTable rows={rows} cols={cols} storageKey="jobs" onRowClick={(j) => nav(`/jobs/${j.id}`)} onVisible={setVisible}
+        <DataTable rows={rows} cols={cols} storageKey="jobs" mobileRow={(j) => (
+          <div className="lrow lrow-job">
+            <Pill status={j.status} />
+            <b className="lrow-no mono">{j.job_number}</b>
+            <span className="lrow-right"><ClientChip name={j.client_name} /></span>
+            <span className="lrow-sub">{surnames(j.inspector) || "—"}</span>
+            <span className="lrow-right lrow-dates">{j.ds?.length ? compactDates(j.ds) : "—"}</span>
+          </div>
+        )} onRowClick={(j) => nav(`/jobs/${j.id}`)} onVisible={setVisible}
           rowClass={(j) => (j.flag ? "late" : undefined)}
           rowTitle={(j) => j.overdue ? "Месяц закрыт больше суток назад, а работа не завершена"
             : j.late_edit_at ? "Закрытый месяц изменён позже суток после закрытия — проверьте в карточке" : undefined}

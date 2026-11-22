@@ -48,6 +48,7 @@ type Props = {
   periodKey?: string; // date field to filter by period (month or custom range)
   columnFilters?: boolean; // Excel-style filters in column headers (default true)
   deleteRight?: string; // right needed to delete a record (default "delete": admin only)
+  mobileRow?: (row: any, actions: React.ReactNode) => React.ReactNode; // the row in the compact phone list
 };
 
 /** Indian financial year quarter: 2026-11-15 -> "Q3 FY27". */
@@ -388,7 +389,7 @@ export default function CrudTable(p: Props) {
         {canWrite && p.allowCreate !== false && <button className="btn primary" onClick={() => setEdit({ ...(p.defaults ?? {}) })}>Добавить</button>}
       </div>
       <ErrorLine error={error} />
-      <DataTable rows={rows} cols={tableCols} storageKey={p.endpoint} filters={p.columnFilters !== false} onRowClick={p.onRowClick} onVisible={setVisible}
+      <DataTable rows={rows} cols={tableCols} storageKey={p.endpoint} mobileRow={p.mobileRow} filters={p.columnFilters !== false} onRowClick={p.onRowClick} onVisible={setVisible}
         empty={loading ? "Загрузка…" : p.allowCreate === false ? "Пока пусто." : "Пока пусто. Нажмите «Добавить», чтобы создать первую запись."}
         actions={(r) => (<>
           {p.rowActions?.(r, reload)}

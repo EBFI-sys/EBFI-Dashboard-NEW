@@ -23,6 +23,7 @@ type Props = {
   rowKey?: (row: any) => string | number;
   onRowClick?: (row: any) => void;
   rowClass?: (row: any) => string | undefined;
+  mobileRow?: (row: any, actions: React.ReactNode) => React.ReactNode; // the row in the compact phone list
   rowTitle?: (row: any) => string | undefined;
   actions?: (row: any) => React.ReactNode;
   empty?: React.ReactNode;
@@ -145,7 +146,7 @@ function FilterMenu({ col, rows, selected, onChange, onSort, close, at }: {
   );
 }
 
-export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, rowClass, rowTitle, actions, empty, filters = true, onVisible, footer, className, storageKey, footLabel }: Props) {
+export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, rowClass, rowTitle, mobileRow, actions, empty, filters = true, onVisible, footer, className, storageKey, footLabel }: Props) {
   const [shownExtra, setShownExtra] = useState<Set<string>>(() => new Set(loadShown(storageKey) ?? []));
   const saveShown = (s: Set<string>) => {
     setShownExtra(s);
@@ -212,7 +213,7 @@ export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, row
         <button type="button" className={mview === "cards" ? "on" : ""} onClick={() => setMview("cards")}>Карточки</button>
         <button type="button" className={mview === "list" ? "on" : ""} onClick={() => setMview("list")}>Список</button>
       </div>
-      <table className={"mcards" + (mview === "list" ? " mlist" : "")}>
+      <table className={"mcards" + (mview === "list" ? " mlist" : "") + (mobileRow ? " has-mrow" : "")}>
         <thead>
           <tr>
             {cols.map((c) => (
@@ -244,6 +245,7 @@ export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, row
                 </td>
               ))}
               {actions && <td className="actions" onClick={(e) => e.stopPropagation()}>{actions(r)}</td>}
+              {mobileRow && mview === "list" && <td className="m-row" colSpan={span}>{mobileRow(r, actions?.(r))}</td>}
             </tr>
           ))}
           {visible.length === 0 && <tr><td colSpan={span} className="empty">{rows.length ? "Под фильтры ничего не подходит." : empty ?? "Нет данных."}</td></tr>}

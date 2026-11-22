@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, money, today } from "../api";
 import CrudTable, { Field } from "../components/CrudTable";
-import { ErrorLine, Modal, usePersisted } from "../components/ui";
+import { ErrorLine, Modal, Pill, usePersisted } from "../components/ui";
 import { OwnerFilter, ownerMatch } from "../components/OwnerFilter";
 import { useAuth } from "../auth";
 import { CURRENCIES, useRef_ } from "../refs";
@@ -22,6 +22,8 @@ export default function Requests() {
   const { me } = useAuth();
   const [mk, setMk] = useState<any | null>(null);
   const inspectors = useRef_("inspectors");
+  const clients = useRef_("clients");
+  const clientName = (id: number) => clients.find((c) => c.id === id)?.name ?? "—";
   const nameOf = (id: number) => inspectors.find((r) => r.id === id)?.name ?? `#${id}`;
 
   const fields: Field[] = [
@@ -70,6 +72,15 @@ export default function Requests() {
             </div>
             <OwnerFilter value={owner} onChange={setOwner} />
           </>
+        )}
+        mobileRow={(r, actions) => (
+          <div className="lrow">
+            <Pill status={r.status} />
+            <b className="lrow-no">{clientName(r.client_id)}</b>
+            <span className="lrow-right muted">{r.received_date ? String(r.received_date).slice(0, 10).split("-").reverse().slice(0, 2).join(".") : ""}</span>
+            <span className="lrow-sub">{[r.country, r.dates_text].filter(Boolean).join(" · ") || "—"}</span>
+            <span className="lrow-right lrow-actions" onClick={(e) => e.stopPropagation()}>{actions}</span>
+          </div>
         )}
         rowActions={(r, reload) =>
           r.job_id ? <Link className="btn small ghost" to={`/jobs/${r.job_id}`}>В табеле</Link>
