@@ -85,10 +85,25 @@ def job_files(job: Job) -> dict:
     for sub in g.children(job.sp_folder_id):
         if "folder" in sub:
             out[sub["name"]] = {"id": sub["id"], "url": sub.get("webUrl"), "files": [
-                {"name": f["name"], "size": f.get("size"), "url": f.get("webUrl"), "modified": f.get("lastModifiedDateTime"),
+                {"id": f["id"], "name": f["name"], "size": f.get("size"), "url": f.get("webUrl"), "modified": f.get("lastModifiedDateTime"),
                  "by": ((f.get("lastModifiedBy") or {}).get("user") or {}).get("displayName"), "folder": "folder" in f}
                 for f in sorted(g.children(sub["id"]), key=lambda x: x["name"].lower())]}
     return out
+
+
+def download_url(job: Job, item_id: str) -> str:
+    """A short-lived direct link to one file of the job folder (works on a phone without signing in to Microsoft)."""
+    g = sp.graph()
+    item = g.get(item_id)
+    if not item or "file" not in item:
+        raise ValueError("Файл не найден")
+    parent = (item.get("parentReference") or {}).get("id")
+    if parent != job.sp_folder_id and parent not in {c["id"] for c in g.children(job.sp_folder_id) if "folder" in c}:
+        raise ValueError("Файл не из папки этой работы")
+    url = item.get("@microsoft.graph.downloadUrl")
+    if not url:
+        raise ValueError("OneDrive не дал ссылку на скачивание")
+    return url
 
 
 def upload_to_job(job: Job, subfolder: str, name: str, content: bytes, mime: str | None) -> dict:

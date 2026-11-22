@@ -1,4 +1,4 @@
-import { ExternalLink, FileText, FolderOpen, Upload } from "lucide-react";
+import { Download, ExternalLink, FileText, FolderOpen, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { api } from "../api";
 import { ErrorLine, useAsync } from "./ui";
@@ -28,6 +28,7 @@ const fmtSize = (b?: number) => (b == null ? "" : b > 1048576 ? `${(b / 1048576)
 
 /** «Документы» on the job card: the two subfolders of the job folder on OneDrive, with upload. */
 export function JobDocuments({ job, canWrite, onLinked }: { job: any; canWrite: boolean; onLinked: () => void }) {
+  const jobId = job.id;
   const { data, error, loading, reload } = useAsync(() => (job.files_enabled ? api.get(`/jobs/${job.id}/files`) : Promise.resolve(null)), [job.id, job.sp_folder_id]);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -75,7 +76,7 @@ export function JobDocuments({ job, canWrite, onLinked }: { job: any; canWrite: 
       {data && (
         <div className="docs-grid">
           {names.map((n) => (
-            <DropZone key={n} name={n} folder={folders[n]} busy={busy === n} canWrite={canWrite} onFiles={(fl) => upload(n, fl)} />
+            <DropZone key={n} jobId={jobId} name={n} folder={folders[n]} busy={busy === n} canWrite={canWrite} onFiles={(fl) => upload(n, fl)} />
           ))}
         </div>
       )}
@@ -83,7 +84,7 @@ export function JobDocuments({ job, canWrite, onLinked }: { job: any; canWrite: 
   );
 }
 
-function DropZone({ name, folder, busy, canWrite, onFiles }: { name: string; folder: any; busy: boolean; canWrite: boolean; onFiles: (f: FileList) => void }) {
+function DropZone({ jobId, name, folder, busy, canWrite, onFiles }: { jobId: number; name: string; folder: any; busy: boolean; canWrite: boolean; onFiles: (f: FileList) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const files: any[] = folder?.files ?? [];
@@ -97,12 +98,13 @@ function DropZone({ name, folder, busy, canWrite, onFiles }: { name: string; fol
         <div className="spacer" />
         {folder?.url && <a className="icon-link" href={folder.url} target="_blank" rel="noreferrer" title="Открыть папку"><ExternalLink size={14} /></a>}
       </div>
-      {files.length === 0 && <p className="muted small">Пусто.{canWrite ? " Перетащите файлы сюда или нажмите «Загрузить»." : ""}</p>}
+      {files.length === 0 && <p className="muted small">Пусто.{canWrite ? " Перетащите файлы сюда или нажмите «Загрузить» (на телефоне — фото, медиатека или файлы)." : ""}</p>}
       <ul className="dz-list">
         {files.map((f) => (
           <li key={f.url ?? f.name}>
-            <a href={f.url} target="_blank" rel="noreferrer">{f.folder ? "📁 " : ""}{f.name}</a>
+            <a href={f.url} target="_blank" rel="noreferrer" title="Открыть на OneDrive">{f.folder ? "📁 " : ""}{f.name}</a>
             <span className="muted small">{fmtSize(f.size)}{f.by ? ` · ${f.by}` : ""}</span>
+            {!f.folder && f.id && <a className="icon-link dl" href={`/api/jobs/${jobId}/files/${encodeURIComponent(f.id)}/download`} title="Скачать" aria-label={`Скачать ${f.name}`}><Download size={15} /></a>}
           </li>
         ))}
       </ul>

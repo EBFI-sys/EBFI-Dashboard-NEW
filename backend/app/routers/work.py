@@ -4,6 +4,7 @@ import re
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -712,13 +713,28 @@ async def upload_job_file(jid: int, folder: str = Form(...), file: UploadFile = 
     content = await file.read()
     if len(content) > 250 * 1024 * 1024:
         raise HTTPException(422, "Файл больше 250 MB")
+    name = file.filename or "file"
+    m = re.fullmatch(r"(?i)(image|img_\d+|photo|video|capturedimage)(\.\w{1,5})", name)
+    if m:  # a photo taken on the phone: «26.29-43 2026-11-22 14.05.31.jpg» instead of «image.jpg»
+        name = f"{job.job_number} {clock.now():%Y-%m-%d %H.%M.%S}{m[2].lower()}"
     try:
-        item = files.upload_to_job(job, folder, file.filename or "file", content, file.content_type)
+        item = files.upload_to_job(job, folder, name, content, file.content_type)
     except ValueError as e:
         raise HTTPException(422, str(e))
     except sharepoint.GraphError as e:
         raise HTTPException(502, f"OneDrive: {e}")
     return {"name": item.get("name"), "url": item.get("webUrl")}
+
+
+@r.get("/jobs/{jid}/files/{item_id}/download")
+def download_job_file(jid: int, item_id: str, db: Session = Depends(get_db), _=Depends(need("read"))):
+    job = _job_with_folder(jid, db)
+    try:
+        return RedirectResponse(files.download_url(job, item_id), status_code=302)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    except sharepoint.GraphError as e:
+        raise HTTPException(502, f"OneDrive: {e}")
 
 
 # ---------------------------------------------------------------- calendar of agreed dates

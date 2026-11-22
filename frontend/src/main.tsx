@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ActiveCtx, PageCtx, TrayBar, TrayCtx, TrayProvider } from "./components/ui";
-import { Clock, Moon, Sun, BookOpen, CalendarRange, FileText, Gauge, History, Inbox, Landmark, LineChart, UserCog, Wallet } from "lucide-react";
+import { Clock, Menu, Moon, Sun, X, BookOpen, CalendarRange, FileText, Gauge, History, Inbox, Landmark, LineChart, UserCog, Wallet } from "lucide-react";
 import { AuthProvider, useAuth } from "./auth";
 import { CurrencyProvider } from "./currency";
 import "./styles.css";
@@ -126,6 +126,49 @@ function KeepAlive() {
   );
 }
 
+/** Phone: the three working sections as a tab bar at the bottom, everything else under «Ещё». */
+function MobileNav() {
+  const { me, logout, can } = useAuth();
+  const [open, setOpen] = React.useState(false);
+  const loc = useLocation();
+  React.useEffect(() => setOpen(false), [loc.pathname]);
+  const main = NAV[0].items;
+  const onMain = main.some((n) => (n.end ? loc.pathname === n.to : loc.pathname.startsWith(n.to)));
+  return (
+    <>
+      <nav className="mtabs" aria-label="Разделы">
+        {main.map((n) => (
+          <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => (isActive ? "active" : "")}><n.icon aria-hidden /><span>{n.label}</span></NavLink>
+        ))}
+        <button type="button" className={!onMain || open ? "active" : ""} onClick={() => setOpen(!open)} aria-expanded={open}>
+          {open ? <X aria-hidden /> : <Menu aria-hidden />}<span>Ещё</span>
+        </button>
+      </nav>
+      {open && (
+        <div className="msheet-back" onClick={(e) => e.target === e.currentTarget && setOpen(false)}>
+          <div className="msheet" role="dialog" aria-label="Все разделы">
+            {NAV.slice(1).map((g) => (
+              <div key={g.group}>
+                <div className="nav-group">{g.group}</div>
+                {g.items.map((n) => <NavLink key={n.to} to={n.to}><n.icon aria-hidden />{n.label}</NavLink>)}
+                {g.group === "Система" && can("users") && <NavLink to="/users"><UserCog aria-hidden />Пользователи</NavLink>}
+              </div>
+            ))}
+            <div className="msheet-foot">
+              <ThemeSwitch />
+              <NavLink to="/profile" className="me">
+                <span className="avatar">{me?.initials}</span>
+                <span>{me?.name}<small>{{ admin: "админ", accountant: "бухгалтер", manager: "менеджер" }[me?.role ?? "manager"]}</small></span>
+              </NavLink>
+              <button className="btn ghost small" onClick={logout}>Выйти</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function Shell() {
   const { me, loading, logout, can } = useAuth();
   if (loading) return <div className="center muted">Загрузка…</div>;
@@ -168,6 +211,7 @@ function Shell() {
         )}
         <KeepAlive />
       </main>
+      <MobileNav />
     </div>
   );
 }

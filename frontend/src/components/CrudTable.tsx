@@ -24,6 +24,7 @@ export type Field = {
   wide?: boolean;
   hint?: string;
   optional?: boolean; // column hidden until turned on in «Столбцы»
+  mobile?: "head" | "wide" | "hide"; // phone card view
   input?: (p: { value: any; onChange: (v: any) => void; row: any; patch: (d: Record<string, unknown>) => void }) => React.ReactNode;
 };
 
@@ -303,6 +304,7 @@ export default function CrudTable(p: Props) {
     align: c.type === "money" || c.type === "number" ? "r" : undefined,
     cls: c.type === "textarea" ? "wrap" : c.type === "date" ? "nowrap" : c.wide || c.type === "dates" || c.type === "suggest" ? "brk" : undefined,
     optional: c.optional,
+    mobile: c.mobile ?? (c.type === "textarea" ? "wide" : undefined),
     text: (r: any) => {
       if (c.text) return c.text(r);
       const v = r[c.key];

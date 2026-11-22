@@ -21,13 +21,13 @@ export default function Requests() {
   const nameOf = (id: number) => inspectors.find((r) => r.id === id)?.name ?? `#${id}`;
 
   const fields: Field[] = [
-    { key: "received_date", label: "Дата получения", type: "date" },
+    { key: "received_date", label: "Дата получения", type: "date", mobile: "head" },
     { key: "type", label: "Тип", type: "select", options: ["Inspection", "Audit", "Expediting"], required: true, optional: true },
-    { key: "client_id", label: "Клиент", type: "ref", ref: "clients", required: true },
+    { key: "client_id", label: "Клиент", type: "ref", ref: "clients", required: true, mobile: "head" },
     { key: "final_client", label: "Финальный клиент", type: "suggest", ref: "final-clients", optional: true,
       hint: "Начните вводить — подскажет из справочника; новый добавится сам" },
     { key: "country", label: "Страна", type: "suggest", ref: "countries", required: true },
-    { key: "factory", label: "Завод / адрес", type: "suggest", ref: "vendors", wide: true },
+    { key: "factory", label: "Завод / адрес", type: "suggest", ref: "vendors", wide: true, mobile: "wide" },
     { key: "dates_text", label: "Даты", type: "dates" },
     { key: "client_rate", label: "Нам платят", type: "money", currencyKey: "client_currency" },
     { key: "client_currency", label: "Валюта клиента", type: "select", options: CURRENCIES, list: false },
@@ -35,8 +35,8 @@ export default function Requests() {
     { key: "inspector_currency", label: "Валюта инспектора", type: "select", options: CURRENCIES, list: false },
     { key: "inspector_ids", label: "Инспектор (отправлены CV)", type: "multiref", ref: "inspectors", wide: true,
       hint: "Отметьте всех, чьи CV отправлены клиенту. При переносе в Табель выберете, кто поедет.",
-      render: (r) => <InspectorNames ids={r.inspector_ids} />, text: (r) => (r.inspector_ids ?? []).map(nameOf).join(", ") || null },
-    { key: "status", label: "Статус", type: "status", options: REQ_STATUSES, required: true },
+      mobile: "wide", render: (r) => <InspectorNames ids={r.inspector_ids} />, text: (r) => (r.inspector_ids ?? []).map(nameOf).join(", ") || null },
+    { key: "status", label: "Статус", type: "status", options: REQ_STATUSES, required: true, mobile: "head" },
     { key: "cancel_reason", label: "Причина отмены / переноса", wide: true, list: false },
     { key: "owner_id", label: "Чья", type: "ref", ref: "users", refLabel: "initials" },
     { key: "notes", label: "Примечания", type: "textarea", list: false },

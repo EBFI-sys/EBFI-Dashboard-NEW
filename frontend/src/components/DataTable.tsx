@@ -13,6 +13,7 @@ export type Col = {
   sortNumeric?: boolean;
   optional?: boolean; // hidden until the user turns it on in «Столбцы»
   total?: (rows: any[]) => React.ReactNode; // footer cell for this column
+  mobile?: "head" | "wide" | "hide"; // phone card view: in the card title, full width, or not shown
 };
 
 type Props = {
@@ -193,7 +194,7 @@ export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, row
           {hasOptional && <ColumnPicker cols={allCols} shown={shownExtra} setShown={saveShown} />}
         </div>
       )}
-      <table>
+      <table className="mcards">
         <thead>
           <tr>
             {cols.map((c) => (
@@ -220,7 +221,7 @@ export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, row
           {visible.map((r, i) => (
             <tr key={rowKey ? rowKey(r) : r.id ?? i} className={[onRowClick ? "clickable" : "", rowClass?.(r) ?? ""].join(" ").trim()} title={rowTitle?.(r)} onClick={() => onRowClick?.(r)}>
               {cols.map((c) => (
-                <td key={c.key} className={(c.align === "r" ? "r " : "") + (c.cls ?? "")}>
+                <td key={c.key} data-label={c.label} className={(c.align === "r" ? "r " : "") + (c.cls ?? "") + (c.mobile ? " m-" + c.mobile : "")}>
                   {c.render ? c.render(r) : (r[c.key] ?? "—")}
                 </td>
               ))}

@@ -51,6 +51,7 @@ export default function Jobs() {
   const inspectors = useMemo(() => new Map(inspectorRows.map((i) => [i.id, i])), [inspectorRows]);
   const [status, setStatus] = useState("В работе,Пауза");
   const [month, setMonth] = useState(thisMonth());
+  const [q, setQ] = useState("");
   const [add, setAdd] = useState(false);
   const [cal, setCal] = useState(false);
   const [dates, setDates] = useState<any | null>(null);
@@ -68,24 +69,25 @@ export default function Jobs() {
       client_rate_text: rateText(as, "client_rate", "currency"),
       inspector_rate_text: rateText(as.filter((a: any) => !a.no_subcontractor), "inspector_rate", "inspector_currency"),
     };
-  }), [data, month]);
+  }).filter((j) => !q || [j.job_number, j.client_name, j.inspector, j.vendor, j.country, j.client_job_number]
+    .some((v) => v && String(v).toLowerCase().includes(q.toLowerCase()))), [data, month, q]);
 
   const cols: Col[] = [
     {
-      key: "status", label: "Статус", render: (j) => (
+      key: "status", label: "Статус", mobile: "head", render: (j) => (
         <span className="status-cell"><Pill status={j.status} />
           {j.dates_passed && <span className="pill late-pill" title={`Последняя дата ${j.last_date.split("-").reverse().join(".")} прошла — завершите работу`}>даты прошли</span>}
         </span>
       ),
     },
-    { key: "job_number", label: "Job №", cls: "mono" },
-    { key: "client_name", label: "Клиент", render: (j) => <ClientChip name={j.client_name} /> },
+    { key: "job_number", label: "Job №", cls: "mono", mobile: "head" },
+    { key: "client_name", label: "Клиент", mobile: "head", render: (j) => <ClientChip name={j.client_name} /> },
     { key: "inspector", label: "Инспектор" },
-    { key: "vendor", label: "Завод", cls: "wrap" },
+    { key: "vendor", label: "Завод", cls: "wrap", mobile: "wide" },
     { key: "country", label: "Страна" },
     { key: "owner", label: "Чья", render: (j) => <OwnerChip initials={j.owner} /> },
     {
-      key: "date_text", label: month ? "Дата (" + monthLabel(month).split(" ")[0].toLowerCase() + ")" : "Дата", text: (j) => j.date_text || null,
+      key: "date_text", mobile: "wide", label: month ? "Дата (" + monthLabel(month).split(" ")[0].toLowerCase() + ")" : "Дата", text: (j) => j.date_text || null,
       render: (j) => (
         <button type="button" className={"date-cell" + (j.ds?.length ? "" : " empty-dates")}
           title="Открыть календарь дат инспекции"
@@ -137,6 +139,7 @@ export default function Jobs() {
           </div>
           <span className="muted">{loading ? "Загрузка…" : `${visible.length} работ`}</span>
           <div className="spacer" />
+          <input className="search" type="search" placeholder="Поиск: номер, клиент, инспектор, завод" value={q} onChange={(e) => setQ(e.target.value)} />
           <button className="btn ghost" onClick={() => downloadCsv("tabel.csv", visible, [
             { key: "job_number", label: "Job" }, { key: "client_name", label: "Клиент" }, { key: "inspector", label: "Инспектор" }, { key: "vendor", label: "Завод" },
             { key: "country", label: "Страна" }, { key: "owner", label: "Чья" }, { key: "status", label: "Статус" }, { key: "date_text", label: "Даты" },
