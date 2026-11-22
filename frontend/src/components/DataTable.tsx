@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Popover } from "./ui";
+import { Popover, usePersisted } from "./ui";
 
 /** One column of a DataTable. `text` gives the value used for filtering and sorting (defaults to row[key]). */
 export type Col = {
@@ -14,6 +14,7 @@ export type Col = {
   optional?: boolean; // hidden until the user turns it on in «Столбцы»
   total?: (rows: any[]) => React.ReactNode; // footer cell for this column
   mobile?: "head" | "wide" | "hide"; // phone card view: in the card title, full width, or not shown
+  mlist?: boolean; // shown in the compact phone list (default: the «head» columns)
 };
 
 type Props = {
@@ -157,9 +158,22 @@ export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, row
   const cols = useMemo(() => allCols.filter((c) => !c.optional || shownExtra.has(c.key)), [allCols, shownExtra]);
   const hasOptional = allCols.some((c) => c.optional);
   const hasTotals = cols.some((c) => c.total);
-  const [sel, setSel] = useState<Record<string, Set<string> | undefined>>({});
+  // column filters and sort survive opening a record and coming back (until the app is closed)
+  const [selLocal, setSelLocal] = useState<Record<string, string[]>>({});
+  const [selRaw, setSelRaw] = usePersisted<Record<string, string[]>>("table." + (storageKey ?? "") + ".sel", {}, "session");
+  const sel = useMemo(() => Object.fromEntries(Object.entries(storageKey ? selRaw : selLocal).map(([k, v]) => [k, v ? new Set(v) : undefined])) as Record<string, Set<string> | undefined>, [selRaw, selLocal, storageKey]);
+  const setSel = (f: Record<string, Set<string> | undefined> | ((x: Record<string, Set<string> | undefined>) => Record<string, Set<string> | undefined>)) => {
+    const next = typeof f === "function" ? f(sel) : f;
+    const plain = Object.fromEntries(Object.entries(next).filter(([, v]) => v).map(([k, v]) => [k, [...v!]]));
+    storageKey ? setSelRaw(plain) : setSelLocal(plain);
+  };
+  const [mview, setMview] = usePersisted<"cards" | "list">("table." + (storageKey ?? "any") + ".mview", "cards");
   const [open, setOpen] = useState<{ key: string; at: DOMRect } | null>(null);
-  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
+  type Sort = { key: string; dir: 1 | -1 } | null;
+  const [sortLocal, setSortLocal] = useState<Sort>(null);
+  const [sortSaved, setSortSaved] = usePersisted<Sort>("table." + (storageKey ?? "") + ".sort", null, "session");
+  const sort = storageKey ? sortSaved : sortLocal;
+  const setSort = storageKey ? setSortSaved : setSortLocal;
 
   const visible = useMemo(() => {
     let r = rows.filter((row) => cols.every((c) => !sel[c.key] || sel[c.key]!.has(asText(valueOf(c, row)))));
@@ -194,7 +208,11 @@ export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, row
           {hasOptional && <ColumnPicker cols={allCols} shown={shownExtra} setShown={saveShown} />}
         </div>
       )}
-      <table className="mcards">
+      <div className="mview seg" role="group" aria-label="Вид на телефоне">
+        <button type="button" className={mview === "cards" ? "on" : ""} onClick={() => setMview("cards")}>Карточки</button>
+        <button type="button" className={mview === "list" ? "on" : ""} onClick={() => setMview("list")}>Список</button>
+      </div>
+      <table className={"mcards" + (mview === "list" ? " mlist" : "")}>
         <thead>
           <tr>
             {cols.map((c) => (
@@ -221,7 +239,7 @@ export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, row
           {visible.map((r, i) => (
             <tr key={rowKey ? rowKey(r) : r.id ?? i} className={[onRowClick ? "clickable" : "", rowClass?.(r) ?? ""].join(" ").trim()} title={rowTitle?.(r)} onClick={() => onRowClick?.(r)}>
               {cols.map((c) => (
-                <td key={c.key} data-label={c.label} className={(c.align === "r" ? "r " : "") + (c.cls ?? "") + (c.mobile ? " m-" + c.mobile : "")}>
+                <td key={c.key} data-label={c.label} className={(c.align === "r" ? "r " : "") + (c.cls ?? "") + (c.mobile ? " m-" + c.mobile : "") + (c.mlist ?? c.mobile === "head" ? " m-list" : "")}>
                   {c.render ? c.render(r) : (r[c.key] ?? "—")}
                 </td>
               ))}

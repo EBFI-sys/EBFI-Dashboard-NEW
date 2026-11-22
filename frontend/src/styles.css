@@ -556,3 +556,41 @@ tr.late:hover > td { background: rgba(168, 85, 247, 0.26) !important; }
   .colpick { display: none; }
   .filter-note:not(:has(button.btn)) { display: none; }
 }
+
+/* phone: cards or a compact list, no zoom, nothing wider than the screen */
+.mview { display: none !important; }
+.owner-filter { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.owner-filter select { width: auto; min-width: 110px; max-width: 170px; }
+.owner-filter select.on { border-color: rgba(var(--accent-rgb), 0.6); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.12); }
+@media (max-width: 820px) {
+  html, body { overflow-x: hidden; touch-action: manipulation; }
+  .main, .page, .card { max-width: 100%; min-width: 0; }
+  .card { overflow-x: hidden; }
+  table:not(.mcards) { display: block; max-width: 100%; overflow-x: auto; }
+  table:not(.mcards) td { white-space: normal !important; }
+  .facts dd, .assign, .assign * { overflow-wrap: anywhere; }
+  .owner-filter { flex: 1 1 100%; }
+  .owner-filter select { flex: 1; }
+  .mview { display: inline-flex !important; margin: 0 0 10px; }
+
+  table.mcards.mlist tr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 10px 4px; margin: 0;
+    border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
+  table.mcards.mlist tr.late { background: rgba(168, 85, 247, 0.12); box-shadow: inset 3px 0 0 #a855f7; padding-left: 10px; }
+  table.mcards.mlist td { display: none; }
+  table.mcards.mlist td.m-list, table.mcards.mlist td.actions, table.mcards.mlist td.empty { display: block; font-size: 13.5px; font-weight: 400; }
+  table.mcards.mlist td::before { display: none; }
+  table.mcards.mlist td.m-head { font-weight: 600; }
+  table.mcards.mlist td.actions { margin-left: auto; flex: none; }
+  table.mcards.mlist td.empty { flex: 1; }
+  table.mcards.mlist .date-cell { border: 0; padding: 0; width: auto; background: none; color: var(--muted); }
+  table.mcards.mlist .status-cell { flex-direction: row; }
+  table.mcards.mlist .pill { font-size: 10.5px; padding: 1px 7px; }
+  table.mcards.mlist td.m-list:not(.m-head) { color: var(--muted); }
+}
+@media (max-width: 820px) {
+  .table-note { display: none; }
+  .mview { margin: 2px 0 8px; }
+  .mview button { padding: 5px 12px; font-size: 12.5px; }
+  .banner.unfinished { padding: 8px 10px; font-size: 12.5px; }
+}
+@media (max-width: 820px) { .owner-filter { flex: 1 1 100%; } .owner-filter select { max-width: none; flex: 1; } }

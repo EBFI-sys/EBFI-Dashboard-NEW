@@ -6,7 +6,8 @@ import { JobDatesModal, JobsCalendar, shiftMonth } from "../components/Calendar"
 import { ClientChip, OwnerChip } from "../components/Chips";
 import { EditForm, Field } from "../components/CrudTable";
 import DataTable, { Col } from "../components/DataTable";
-import { ErrorLine, Pill, useAsync } from "../components/ui";
+import { ErrorLine, Pill, useAsync, usePersisted } from "../components/ui";
+import { OwnerFilter, ownerMatch } from "../components/OwnerFilter";
 import { CURRENCIES, loadRef, useRef_ } from "../refs";
 
 export const jobFields: Field[] = [
@@ -46,12 +47,14 @@ function Rate({ text }: { text: string | null }) {
 
 export default function Jobs() {
   const nav = useNavigate();
-  const { can } = useAuth();
+  const { can, me } = useAuth();
   const inspectorRows = useRef_("inspectors");
   const inspectors = useMemo(() => new Map(inspectorRows.map((i) => [i.id, i])), [inspectorRows]);
-  const [status, setStatus] = useState("В работе,Пауза");
-  const [month, setMonth] = useState(thisMonth());
-  const [q, setQ] = useState("");
+  // filters stay when you open a job and come back, switch sections or reopen the app
+  const [status, setStatus] = usePersisted("jobs.status", "В работе,Пауза");
+  const [month, setMonth] = usePersisted("jobs.month", thisMonth(), "session");
+  const [owner, setOwner] = usePersisted("jobs.owner", "");
+  const [q, setQ] = usePersisted("jobs.q", "", "session");
   const [add, setAdd] = useState(false);
   const [cal, setCal] = useState(false);
   const [dates, setDates] = useState<any | null>(null);
@@ -69,8 +72,8 @@ export default function Jobs() {
       client_rate_text: rateText(as, "client_rate", "currency"),
       inspector_rate_text: rateText(as.filter((a: any) => !a.no_subcontractor), "inspector_rate", "inspector_currency"),
     };
-  }).filter((j) => !q || [j.job_number, j.client_name, j.inspector, j.vendor, j.country, j.client_job_number]
-    .some((v) => v && String(v).toLowerCase().includes(q.toLowerCase()))), [data, month, q]);
+  }).filter((j) => ownerMatch(owner, j.owner_id, me?.id)).filter((j) => !q || [j.job_number, j.client_name, j.inspector, j.vendor, j.country, j.client_job_number]
+    .some((v) => v && String(v).toLowerCase().includes(q.toLowerCase()))), [data, month, q, owner, me?.id]);
 
   const cols: Col[] = [
     {
@@ -82,12 +85,12 @@ export default function Jobs() {
     },
     { key: "job_number", label: "Job №", cls: "mono", mobile: "head" },
     { key: "client_name", label: "Клиент", mobile: "head", render: (j) => <ClientChip name={j.client_name} /> },
-    { key: "inspector", label: "Инспектор" },
+    { key: "inspector", label: "Инспектор", mlist: true },
     { key: "vendor", label: "Завод", cls: "wrap", mobile: "wide" },
     { key: "country", label: "Страна" },
     { key: "owner", label: "Чья", render: (j) => <OwnerChip initials={j.owner} /> },
     {
-      key: "date_text", mobile: "wide", label: month ? "Дата (" + monthLabel(month).split(" ")[0].toLowerCase() + ")" : "Дата", text: (j) => j.date_text || null,
+      key: "date_text", mobile: "wide", mlist: true, label: month ? "Дата (" + monthLabel(month).split(" ")[0].toLowerCase() + ")" : "Дата", text: (j) => j.date_text || null,
       render: (j) => (
         <button type="button" className={"date-cell" + (j.ds?.length ? "" : " empty-dates")}
           title="Открыть календарь дат инспекции"
@@ -112,6 +115,7 @@ export default function Jobs() {
     });
     nav(`/jobs/${job.id}`);
   };
+  const mine = (unfinished.data ?? []).filter((u) => ownerMatch(owner, u.owner_id, me?.id));
   const months = useMemo(() => Array.from({ length: 19 }, (_, i) => shiftMonth(thisMonth(), 6 - i)), []);
 
   return (
@@ -137,6 +141,7 @@ export default function Jobs() {
             </select>
             <button className="btn small ghost" disabled={!month} onClick={() => setMonth(shiftMonth(month, 1))} aria-label="Следующий месяц">›</button>
           </div>
+          <OwnerFilter value={owner} onChange={setOwner} />
           <span className="muted">{loading ? "Загрузка…" : `${visible.length} работ`}</span>
           <div className="spacer" />
           <input className="search" type="search" placeholder="Поиск: номер, клиент, инспектор, завод" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -147,17 +152,17 @@ export default function Jobs() {
           {can("write") && <button className="btn primary" onClick={() => setAdd(true)}>Новая работа</button>}
         </div>
         <ErrorLine error={error} />
-        {(unfinished.data ?? []).length > 0 && (
+        {mine.length > 0 && (
           <div className="banner late unfinished">
-            <span>Не завершены работы прошлых месяцев ({unfinished.data!.length}):</span>
-            {unfinished.data!.map((u) => (
+            <span>Не завершены работы прошлых месяцев ({mine.length}):</span>
+            {mine.map((u) => (
               <button key={u.id} className="job-link mono" title={`Последний месяц работы — ${monthLabel(u.month)}`} onClick={() => nav(`/jobs/${u.id}`)}>{u.job_number}</button>
             ))}
           </div>
         )}
         {month && <p className="muted small table-note">{monthLabel(month)}: только работы с днями в этом месяце, даты и MD — за этот месяц.
           {" "}<span className="late-key" /> — изменён закрытый месяц или работа не завершена после закрытия месяца.</p>}
-        <DataTable rows={rows} cols={cols} onRowClick={(j) => nav(`/jobs/${j.id}`)} onVisible={setVisible}
+        <DataTable rows={rows} cols={cols} storageKey="jobs" onRowClick={(j) => nav(`/jobs/${j.id}`)} onVisible={setVisible}
           rowClass={(j) => (j.flag ? "late" : undefined)}
           rowTitle={(j) => j.overdue ? "Месяц закрыт больше суток назад, а работа не завершена"
             : j.late_edit_at ? "Закрытый месяц изменён позже суток после закрытия — проверьте в карточке" : undefined}

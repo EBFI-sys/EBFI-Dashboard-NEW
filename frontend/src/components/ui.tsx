@@ -153,6 +153,21 @@ export function Toast({ text, onDone }: { text: string | null; onDone: () => voi
   return text ? createPortal(<div className="toast" role="status">{text}</div>, document.body) : null;
 }
 
+/** useState that survives leaving the page, closing a job card and (for "local") restarting the app on the phone.
+ *  "session" lasts until the browser tab or the home-screen app is closed. Keys are per user. */
+export function usePersisted<T>(key: string, initial: T, kind: "local" | "session" = "local"): [T, (v: T) => void] {
+  const store = () => { try { return kind === "local" ? window.localStorage : window.sessionStorage; } catch { return null; } };
+  const full = "ebfi.f." + key;
+  const [v, setV] = useState<T>(() => {
+    try { const raw = store()?.getItem(full); return raw == null ? initial : (JSON.parse(raw) as T); } catch { return initial; }
+  });
+  const set = useCallback((x: T) => {
+    setV(x);
+    try { store()?.setItem(full, JSON.stringify(x)); } catch { /* private mode */ }
+  }, [full]); // eslint-disable-line react-hooks/exhaustive-deps
+  return [v, set];
+}
+
 export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);

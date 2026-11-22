@@ -228,7 +228,7 @@ def unfinished_jobs(before: str, db: Session = Depends(get_db), _=Depends(need("
     for j in db.scalars(select(Job).where(Job.deleted.is_(False), Job.status != "Завершен").order_by(Job.job_number)):
         months = {l.month for l in j.lines if not l.deleted}
         if months and max(months) < before:
-            out.append({"id": j.id, "job_number": j.job_number, "month": max(months)})
+            out.append({"id": j.id, "job_number": j.job_number, "month": max(months), "owner_id": j.owner_id})
     return out
 
 

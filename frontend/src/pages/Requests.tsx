@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, money, today } from "../api";
 import CrudTable, { Field } from "../components/CrudTable";
-import { ErrorLine, Modal } from "../components/ui";
+import { ErrorLine, Modal, usePersisted } from "../components/ui";
+import { OwnerFilter, ownerMatch } from "../components/OwnerFilter";
+import { useAuth } from "../auth";
 import { CURRENCIES, useRef_ } from "../refs";
 
 export const REQ_STATUSES = ["В процессе", "Принято в работу", "Выполнено", "Перенос", "Отмена"];
@@ -15,7 +17,9 @@ function InspectorNames({ ids }: { ids: number[] | null }) {
 }
 
 export default function Requests() {
-  const [show, setShow] = useState<"open" | "closed" | "all">("open");
+  const [show, setShow] = usePersisted<"open" | "closed" | "all">("requests.show", "open");
+  const [owner, setOwner] = usePersisted("requests.owner", "");
+  const { me } = useAuth();
   const [mk, setMk] = useState<any | null>(null);
   const inspectors = useRef_("inspectors");
   const nameOf = (id: number) => inspectors.find((r) => r.id === id)?.name ?? `#${id}`;
@@ -26,9 +30,9 @@ export default function Requests() {
     { key: "client_id", label: "Клиент", type: "ref", ref: "clients", required: true, mobile: "head" },
     { key: "final_client", label: "Финальный клиент", type: "suggest", ref: "final-clients", optional: true,
       hint: "Начните вводить — подскажет из справочника; новый добавится сам" },
-    { key: "country", label: "Страна", type: "suggest", ref: "countries", required: true },
+    { key: "country", label: "Страна", type: "suggest", ref: "countries", required: true, mlist: true },
     { key: "factory", label: "Завод / адрес", type: "suggest", ref: "vendors", wide: true, mobile: "wide" },
-    { key: "dates_text", label: "Даты", type: "dates" },
+    { key: "dates_text", label: "Даты", type: "dates", mlist: true },
     { key: "client_rate", label: "Нам платят", type: "money", currencyKey: "client_currency" },
     { key: "client_currency", label: "Валюта клиента", type: "select", options: CURRENCIES, list: false },
     { key: "inspector_rate", label: "Ставка инспектора", type: "money", currencyKey: "inspector_currency", optional: true },
@@ -55,13 +59,17 @@ export default function Requests() {
         periodDefault="current"
         deleteRight="delete_work"
         defaults={{ status: "В процессе", type: "Inspection", received_date: today(), client_currency: "USD", inspector_currency: "USD", inspector_ids: [] }}
-        filter={(r) => show === "all" || (show === "open" ? !CLOSED.includes(r.status) : CLOSED.includes(r.status))}
+        filter={(r) => ownerMatch(owner, r.owner_id, me?.id) &&
+          (show === "all" || (show === "open" ? !CLOSED.includes(r.status) : CLOSED.includes(r.status)))}
         toolbar={() => (
-          <div className="seg">
-            {([["open", "Активные"], ["closed", "Закрытые"], ["all", "Все"]] as const).map(([k, l]) => (
-              <button key={k} className={show === k ? "on" : ""} onClick={() => setShow(k)}>{l}</button>
-            ))}
-          </div>
+          <>
+            <div className="seg">
+              {([["open", "Активные"], ["closed", "Закрытые"], ["all", "Все"]] as const).map(([k, l]) => (
+                <button key={k} className={show === k ? "on" : ""} onClick={() => setShow(k)}>{l}</button>
+              ))}
+            </div>
+            <OwnerFilter value={owner} onChange={setOwner} />
+          </>
         )}
         rowActions={(r, reload) =>
           r.job_id ? <Link className="btn small ghost" to={`/jobs/${r.job_id}`}>В табеле</Link>

@@ -5,7 +5,7 @@ import { useAuth } from "../auth";
 import { invalidateRef, loadRef, useRef_ } from "../refs";
 import { DatesField } from "./Calendar";
 import DataTable, { Col } from "./DataTable";
-import { ErrorLine, Modal, Pill, Portal, Toast, useAsync } from "./ui";
+import { ErrorLine, Modal, Pill, Portal, Toast, useAsync, usePersisted } from "./ui";
 
 export type Field = {
   key: string;
@@ -25,6 +25,7 @@ export type Field = {
   hint?: string;
   optional?: boolean; // column hidden until turned on in «Столбцы»
   mobile?: "head" | "wide" | "hide"; // phone card view
+  mlist?: boolean; // shown in the compact phone list
   input?: (p: { value: any; onChange: (v: any) => void; row: any; patch: (d: Record<string, unknown>) => void }) => React.ReactNode;
 };
 
@@ -270,9 +271,10 @@ export default function CrudTable(p: Props) {
   const { can } = useAuth();
   const { data, error, loading, reload } = useAsync(() => api.get<any[]>(p.endpoint + (p.query ? `?${p.query}` : "")), [p.endpoint, p.query]);
   const [edit, setEdit] = useState<any | null>(null);
-  const [q, setQ] = useState("");
-  const [period, setPeriod] = useState<string>(p.periodKey && p.periodDefault === "current" ? thisMonth() : "all");
-  const [range, setRange] = useState<{ from: string; to: string }>({ from: "", to: "" });
+  // search and period stay while the app is open (leaving the page, opening a record), reset when it is closed
+  const [q, setQ] = usePersisted(p.endpoint + ".q", "", "session");
+  const [period, setPeriod] = usePersisted<string>(p.endpoint + ".period", p.periodKey && p.periodDefault === "current" ? thisMonth() : "all", "session");
+  const [range, setRange] = usePersisted<{ from: string; to: string }>(p.endpoint + ".range", { from: "", to: "" }, "session");
   const [toast, setToast] = useState<string | null>(null);
   const canWrite = can(p.writeRight ?? "write");
   const cols = p.fields.filter((f) => f.list !== false);
@@ -305,6 +307,7 @@ export default function CrudTable(p: Props) {
     cls: c.type === "textarea" ? "wrap" : c.type === "date" ? "nowrap" : c.wide || c.type === "dates" || c.type === "suggest" ? "brk" : undefined,
     optional: c.optional,
     mobile: c.mobile ?? (c.type === "textarea" ? "wide" : undefined),
+    mlist: c.mlist,
     text: (r: any) => {
       if (c.text) return c.text(r);
       const v = r[c.key];
