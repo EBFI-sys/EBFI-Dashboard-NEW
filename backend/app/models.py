@@ -180,6 +180,10 @@ class Job(Base, TimestampMixin, SoftDelete):
     late_edit_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     late_edit_months: Mapped[str | None] = mapped_column(String(100))
     notes: Mapped[str | None] = mapped_column(Text)
+    service_type: Mapped[str | None] = mapped_column(String(30))  # Inspection | Audit | Expediting → «Inspection subject»
+    equipment: Mapped[str | None] = mapped_column(String(300))
+    cargo: Mapped[str | None] = mapped_column(String(120))  # marine surveys: type of cargo
+    tonnage: Mapped[Decimal | None] = mapped_column(Numeric(14, 3))  # marine surveys: MT
     lines: Mapped[list["JobLine"]] = relationship(back_populates="job", order_by="JobLine.month")
     client: Mapped[Client] = relationship()
 
@@ -240,6 +244,24 @@ class SalesInvoice(Base, TimestampMixin, SoftDelete):
     doc_url: Mapped[str | None] = mapped_column(Text)  # Word file on OneDrive
     pdf_url: Mapped[str | None] = mapped_column(Text)
     annex_url: Mapped[str | None] = mapped_column(Text)
+
+
+class CreditNote(Base, TimestampMixin, SoftDelete):
+    """CN-2627-NNN against a client invoice: the same document with «CREDIT NOTE PASS AGAINST INVOICE № …»."""
+    __tablename__ = "credit_notes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    number: Mapped[str] = mapped_column(String(40), unique=True)
+    date: Mapped[dt.date | None] = mapped_column(Date)
+    sales_invoice_id: Mapped[int] = mapped_column(ForeignKey("sales_invoices.id"))
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"))
+    currency: Mapped[str | None] = mapped_column(String(3))
+    amount: Mapped[Decimal | None] = mapped_column(Money)
+    gst_inr: Mapped[Decimal | None] = mapped_column(Money)
+    line_ids: Mapped[list | None] = mapped_column(JSON)  # the invoice lines at the time of the credit note
+    released: Mapped[bool] = mapped_column(Boolean, default=False)  # its jobs were freed to be invoiced again
+    reason: Mapped[str | None] = mapped_column(Text)
+    doc_url: Mapped[str | None] = mapped_column(Text)
+    pdf_url: Mapped[str | None] = mapped_column(Text)
 
 
 class TdsEntry(Base, TimestampMixin):

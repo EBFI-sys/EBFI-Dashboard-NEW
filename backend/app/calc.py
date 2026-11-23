@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from .models import Client, FxRate, Job, JobLine, MonthClose, PaymentMethod, Setting
 
-DEFAULTS = {"gst_rate": "0.18", "tds_rate": "0.10", "admin_rate": "0.18", "company_state": "Maharashtra", "sales_invoice_last": "", "wht_rate": "0.05"}
+DEFAULTS = {"gst_rate": "0.18", "tds_rate": "0.10", "admin_rate": "0.18", "company_state": "Maharashtra", "sales_invoice_last": "", "wht_rate": "0.05", "credit_note_last": ""}
 D0 = Decimal("0")
 
 

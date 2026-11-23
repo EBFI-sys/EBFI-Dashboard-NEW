@@ -9,12 +9,12 @@ from .migrate import upgrade
 from . import invoice_rules
 from .models import Client, Country, PaymentMethod
 from . import scheduler
-from .routers import auth, dashboard, money, my, refs, users, work
+from .routers import auth, credit, dashboard, money, my, refs, users, work
 
 log = logging.getLogger("ebfi")
 
 app = FastAPI(title="EBFI Ops", docs_url="/api/docs", openapi_url="/api/openapi.json")
-for router in (auth.r, users.r, refs.r, work.r, money.r, dashboard.r, my.r):
+for router in (auth.r, users.r, refs.r, work.r, money.r, dashboard.r, my.r, credit.r):
     app.include_router(router, prefix="/api")
 
 

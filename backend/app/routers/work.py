@@ -77,7 +77,7 @@ def create_job_from_request(rid: int, data: dict, db: Session = Depends(get_db),
         raise HTTPException(409, f"Работа {number} уже есть в Табеле")
     notes = "\n".join(x for x in [f"Финальный клиент: {req.final_client}" if req.final_client else "", req.notes or ""] if x) or None
     job = Job(job_number=number, client_id=req.client_id, country=req.country, vendor=req.factory,
-              owner_id=req.owner_id or user.id, status="В работе", notes=notes)
+              owner_id=req.owner_id or user.id, status="В работе", notes=notes, service_type=req.type or "Inspection")
     db.add(job)
     db.flush()
     inspectors = [int(i) for i in (data.get("inspector_ids") or ([req.inspector_id] if req.inspector_id else []))]

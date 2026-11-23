@@ -64,13 +64,13 @@ def make_crud(model, prefix: str, *, order_by=None, search: list[str] = (), hide
               readonly: set[str] = frozenset(), write_right: str = "write",
               serialize: Callable | None = None, before_save: Callable | None = None,
               after_save: Callable | None = None, delete_right: str = "delete",
-              before_delete: Callable | None = None) -> APIRouter:
+              before_delete: Callable | None = None, read_right: str = "read") -> APIRouter:
     r = APIRouter(prefix=prefix)
     ser = serialize or (lambda o, db: to_dict(o, hide))
     has_deleted = hasattr(model, "deleted")
 
     @r.get("")
-    def list_(request: Request, db: Session = Depends(get_db), user: User = Depends(need("read"))):
+    def list_(request: Request, db: Session = Depends(get_db), user: User = Depends(need(read_right))):
         stmt = select(model)
         if has_deleted:
             stmt = stmt.where(model.deleted.is_(False))
@@ -85,7 +85,7 @@ def make_crud(model, prefix: str, *, order_by=None, search: list[str] = (), hide
         return [ser(o, db) for o in db.scalars(stmt.limit(10000))]
 
     @r.get("/{item_id}")
-    def get_(item_id: int, db: Session = Depends(get_db), user: User = Depends(need("read"))):
+    def get_(item_id: int, db: Session = Depends(get_db), user: User = Depends(need(read_right))):
         obj = db.get(model, item_id)
         if not obj or (has_deleted and obj.deleted):
             raise HTTPException(404, "Не найдено")

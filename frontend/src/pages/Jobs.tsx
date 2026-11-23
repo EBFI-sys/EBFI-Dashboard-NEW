@@ -19,6 +19,10 @@ export const jobFields: Field[] = [
   { key: "vendor", label: "Завод (Vendor)", type: "suggest", ref: "vendors", wide: true, hint: "Начните вводить — система предложит заводы из справочника; новый завод добавится сам" },
   { key: "country", label: "Страна", type: "suggest", ref: "countries" },
   { key: "owner_id", label: "Чья", type: "ref", ref: "users", refLabel: "initials" },
+  { key: "service_type", label: "Тип услуги (Inspection subject)", type: "select", options: ["Inspection", "Audit", "Expediting"] },
+  { key: "equipment", label: "Оборудование (Equipment)", wide: true },
+  { key: "cargo", label: "Тип груза (морской сюрвей)" },
+  { key: "tonnage", label: "Тоннаж, MT (морской сюрвей)", type: "number" },
   { key: "notes", label: "Примечания", type: "textarea" },
 ];
 

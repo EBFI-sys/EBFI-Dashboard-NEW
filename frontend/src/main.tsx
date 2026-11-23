@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ActiveCtx, PageCtx, TrayBar, TrayCtx, TrayProvider } from "./components/ui";
-import { Clock, ListChecks, Menu, Moon, RefreshCw, Sun, X, BookOpen, CalendarRange, FileText, Gauge, History, Inbox, Landmark, LineChart, UserCog, Wallet } from "lucide-react";
+import { Clock, ListChecks, ReceiptText, Menu, Moon, RefreshCw, Sun, X, BookOpen, CalendarRange, FileText, Gauge, History, Inbox, Landmark, LineChart, UserCog, Wallet } from "lucide-react";
 import { AuthProvider, useAuth } from "./auth";
 import { CurrencyProvider } from "./currency";
 import "./styles.css";
@@ -11,6 +11,7 @@ import Dashboard from "./pages/Dashboard";
 import JobCard from "./pages/JobCard";
 import Jobs from "./pages/Jobs";
 import Login from "./pages/Login";
+import CreditNotes from "./pages/CreditNotes";
 import MyDay from "./pages/MyDay";
 import Payouts from "./pages/Payouts";
 import Pnl from "./pages/Pnl";
@@ -21,7 +22,8 @@ import Sales from "./pages/Sales";
 import Tds from "./pages/Tds";
 import Users from "./pages/Users";
 
-const NAV = [
+type NavItem = { to: string; label: string; icon: typeof Gauge; end?: boolean; right?: string };
+const NAV: { group: string; items: NavItem[] }[] = [
   { group: "Работа", items: [
     { to: "/my", label: "Мой день", icon: ListChecks },
     { to: "/", label: "Дашборд", end: true, icon: Gauge },
@@ -33,6 +35,7 @@ const NAV = [
     { to: "/sales", label: "Реестр исходящих счетов", icon: FileText },
     { to: "/payouts", label: "Реестр входящих счетов", icon: Wallet },
     { to: "/tds", label: "Реестр TDS", icon: Landmark },
+    { to: "/credit-notes", label: "Кредит-ноты", icon: ReceiptText, right: "credit_notes" },
   ] },
   { group: "Система", items: [
     { to: "/references", label: "Справочники", icon: BookOpen },
@@ -78,12 +81,12 @@ function IstClock() {
 
 const PAGES: [string, React.ReactNode][] = [
   ["/", <Dashboard />], ["/my", <MyDay />], ["/requests", <Requests />], ["/jobs", <Jobs />], ["/jobs/:id", <JobCard />], ["/pnl", <Pnl />],
-  ["/sales", <Sales />], ["/payouts", <Payouts />], ["/tds", <Tds />], ["/references", <References />], ["/audit", <Audit />],
+  ["/sales", <Sales />], ["/payouts", <Payouts />], ["/tds", <Tds />], ["/credit-notes", <CreditNotes />], ["/references", <References />], ["/audit", <Audit />],
   ["/users", <Users />], ["/profile", <Profile />],
 ];
 const LABEL: Record<string, string> = {
   "/": "Дашборд", "/my": "Мой день", "/requests": "Заявки", "/jobs": "Табель", "/pnl": "Финансовые результаты", "/sales": "Исходящие счета", "/payouts": "Входящие счета",
-  "/tds": "Реестр TDS", "/references": "Справочники", "/audit": "Журнал", "/users": "Пользователи", "/profile": "Профиль",
+  "/tds": "Реестр TDS", "/credit-notes": "Кредит-ноты", "/references": "Справочники", "/audit": "Журнал", "/users": "Пользователи", "/profile": "Профиль",
 };
 
 function NotFound() {
@@ -209,7 +212,7 @@ function MobileNav() {
       {open && (
         <div className="msheet-back" onClick={(e) => e.target === e.currentTarget && setOpen(false)}>
           <div className="msheet" role="dialog" aria-label="Все разделы">
-            {NAV.map((g) => ({ ...g, items: g.items.filter((n) => !main.includes(n)) })).filter((g) => g.items.length).map((g) => (
+            {NAV.map((g) => ({ ...g, items: g.items.filter((n: any) => !main.includes(n) && (!n.right || can(n.right))) })).filter((g) => g.items.length).map((g) => (
               <div key={g.group}>
                 <div className="nav-group">{g.group}</div>
                 {g.items.map((n) => <NavLink key={n.to} to={n.to} end={n.end}><n.icon aria-hidden />{n.label}</NavLink>)}
@@ -247,7 +250,7 @@ function Shell() {
           {NAV.map((g) => (
             <div key={g.group} style={{ display: "contents" }}>
               <div className="nav-group">{g.group}</div>
-              {g.items.map((n) => (
+              {g.items.filter((n: any) => !n.right || can(n.right)).map((n) => (
                 <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => (isActive ? "active" : "")}><n.icon aria-hidden />{n.label}</NavLink>
               ))}
               {g.group === "Система" && can("users") && <NavLink to="/users"><UserCog aria-hidden />Пользователи</NavLink>}

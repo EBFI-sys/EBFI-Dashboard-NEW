@@ -95,7 +95,7 @@ function TaxSettings() {
   const [toast, setToast] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   if (!data) return <ErrorLine error={error} />;
-  const L: Record<string, string> = { gst_rate: "GST (доля, 0.18 = 18%)", tds_rate: "TDS (доля, 0.10 = 10%)", admin_rate: "Админка (доля от B, 0.18 = 18%)", company_state: "Штат EBFI Privat Limited", wht_rate: "WHT (доля, 0.05 = 5%) — потеря по клиентам с отметкой «Удерживает WHT»", sales_invoice_last: "Автонумерация инвойсов: последний выданный номер (NNN). Пусто — номера вводятся вручную" };
+  const L: Record<string, string> = { gst_rate: "GST (доля, 0.18 = 18%)", tds_rate: "TDS (доля, 0.10 = 10%)", admin_rate: "Админка (доля от B, 0.18 = 18%)", company_state: "Штат EBFI Privat Limited", wht_rate: "WHT (доля, 0.05 = 5%) — потеря по клиентам с отметкой «Удерживает WHT»", sales_invoice_last: "Автонумерация инвойсов: последний выданный номер (NNN). Пусто — номера вводятся вручную", credit_note_last: "Кредит-ноты: последний выданный номер (CN-2627-NNN → NNN)" };
   return (
     <section className="card narrow">
       <h2>Ставки налогов и нумерация</h2>

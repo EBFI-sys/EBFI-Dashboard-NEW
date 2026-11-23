@@ -175,8 +175,10 @@ def _country(c: str | None) -> str:
     return " ".join(w[:1].upper() + w[1:].lower() for w in (c or "").split())
 
 
-def items_of(db: Session, inv: SalesInvoice, rule: Rule) -> list[dict]:
-    lines = list(db.scalars(select(JobLine).where(JobLine.sales_invoice_id == inv.id, JobLine.deleted.is_(False))))
+def items_of(db: Session, inv: SalesInvoice, rule: Rule, line_ids: list[int] | None = None) -> list[dict]:
+    """line_ids: the lines as they were on the invoice (a credit note keeps them after they are released)."""
+    q = select(JobLine).where(JobLine.id.in_(line_ids)) if line_ids else select(JobLine).where(JobLine.sales_invoice_id == inv.id)
+    lines = list(db.scalars(q.where(JobLine.deleted.is_(False))))
     lines.sort(key=lambda l: (l.job.job_number, l.month, l.grp or 1))
     insp = {i.id: i.name for i in db.scalars(select(Inspector).where(Inspector.id.in_({l.inspector_id for l in lines if l.inspector_id})))}
     out = []
@@ -185,8 +187,12 @@ def items_of(db: Session, inv: SalesInvoice, rule: Rule) -> list[dict]:
         dates = parse_dates(l.dates_text, l.month)
         base = {"job": j.job_number, "country": j.country or "", "vendor": j.vendor or "", "inspector": insp.get(l.inspector_id, ""),
                 "coordinator": j.client_contact or "", "client_ref": j.client_job_number or "", "end_client": _final_client(j),
-                "dates": format_dates(dates) if dates else (l.dates_text or ""), "month": l.month}
+                "dates": format_dates(dates) if dates else (l.dates_text or ""), "month": l.month,
+                "service": j.service_type or "Inspection", "equipment": j.equipment or j.cargo or "",
+                "cargo": j.cargo or "", "tonnage": j.tonnage}
         qty, rate = Decimal(l.quantity or 0), Decimal(l.client_rate or 0)
+        if l.unit == "ton" and not qty and j.tonnage:  # marine loading: the tonnage from the job card
+            qty = Decimal(j.tonnage)
         out.append({**base, "kind": "line", "unit": l.unit or "day", "qty": qty, "rate": rate, "amount": qty * rate})
         if Decimal(l.overtime_client or 0):
             ot = Decimal(l.overtime_client)
@@ -195,19 +201,52 @@ def items_of(db: Session, inv: SalesInvoice, rule: Rule) -> list[dict]:
         qty, rate = Decimal(str(x.get("qty") or 0)), Decimal(str(x.get("rate") or 0))
         job = next((i for i in out if i["job"] == x.get("job")), out[0] if out else {})
         out.append({**{k: job.get(k, "") for k in ("job", "country", "vendor", "inspector", "coordinator", "client_ref",
-                                                    "end_client", "dates", "month")},
+                                                    "end_client", "dates", "month", "service", "equipment", "cargo", "tonnage")},
                     "kind": "extra", "proto": int(x.get("proto") or 0), "unit": x.get("unit") or "lump", "qty": qty, "rate": rate,
                     "amount": qty * rate, "text": x.get("text") or ""})
     return out
 
 
 # ---------------------------------------------------------------- the document
-def build_docx(db: Session, inv: SalesInvoice) -> tuple[bytes, list[str], dict]:
+def suggest_marine(db: Session, inv: SalesInvoice, protos: list[dict]) -> list[dict]:
+    """Extra rows of a marine survey from the job's cargo, tonnage and country (instructions, section 6):
+    corn — 1 composite sample (750 $ Argentina / 795 $ Brazil); soya and others — ceil(MT / 5000) lots × 660 $
+    + pesticides 1 × 150 $; draft survey 1 × 700 $ (Argentina) / 600 $ (Brazil). Rates can be changed before saving."""
+    import math
+    rule = rule_for(db.get(Client, inv.client_id))
+    if not rule or rule.style != "eu" or not protos:
+        return []
+    jobs = {l.job for l in db.scalars(select(JobLine).where(JobLine.sales_invoice_id == inv.id))}
+    out = []
+    find = lambda *words: next((p["idx"] for p in protos if all(w in p["label"].lower() for w in words)), None)  # noqa: E731
+    for j in sorted(jobs, key=lambda x: x.job_number):
+        if not j.tonnage:
+            continue
+        country = (j.country or "").lower()
+        brazil = "brazil" in country
+        corn = any(w in (j.cargo or "").lower() for w in ("corn", "maize", "кукуруз"))
+        lab, pest, draft = find("lab", "composite") or find("lab"), find("pesticide"), find("draft")
+        if lab is not None:
+            if corn:
+                out.append({"proto": lab, "qty": 1, "rate": 795 if brazil else 750, "job": j.job_number})
+            else:
+                out.append({"proto": lab, "qty": math.ceil(float(j.tonnage) / 5000), "rate": 660, "job": j.job_number})
+                if pest is not None:
+                    out.append({"proto": pest, "qty": 1, "rate": 150, "job": j.job_number})
+        if draft is not None:
+            out.append({"proto": draft, "qty": 1, "rate": 600 if brazil else 700, "job": j.job_number})
+    return out
+
+
+def build_docx(db: Session, inv: SalesInvoice, line_ids: list[int] | None = None,
+               credit: tuple[str, dt.date] | None = None) -> tuple[bytes, list[str], dict]:
+    """credit=(CN-2627-NNN, date): the credit note against this invoice — the same document with the title
+    «INVOICE № CN-… / CREDIT NOTE PASS AGAINST INVOICE № EBFI-…» and the credit note's date."""
     client = db.get(Client, inv.client_id)
     rule = rule_for(client)
     if not rule:
         raise InvoiceError(f"Для клиента «{client.name if client else '—'}» не выбран шаблон инвойса (Справочники → Клиент)")
-    items = items_of(db, inv, rule)
+    items = items_of(db, inv, rule, line_ids)
     if not items:
         raise InvoiceError("В инвойсе нет строк работ: создайте его через «Инвойс из работ»")
     warnings: list[str] = []
@@ -281,7 +320,8 @@ def build_docx(db: Session, inv: SalesInvoice) -> tuple[bytes, list[str], dict]:
                 "Coordinator name": it["coordinator"], "Dates": it["dates"],
                 "Month YYYY / dates": it["dates"] or f"{MONTHS[int(it['month'][5:]) - 1]} {it['month'][:4]}",
                 "SAP number": it["client_ref"], "Client job number": it["client_ref"], "Client job ref": it["client_ref"],
-                "PO No": it["client_ref"], "End client": it["end_client"], "Inspection subject": "", "Equipment / cargo": "",
+                "PO No": it["client_ref"], "End client": it["end_client"], "Inspection subject": it["service"],
+                "Equipment / cargo": it["equipment"],
                 "Qty": fmt(it["qty"], style, 3 if it["unit"] == "ton" and it["qty"] != it["qty"].to_integral_value() else None),
                 "Rate": fmt(it["rate"], money_style), "Amount": fmt(it["amount"], money_style)}
         for p in _paras(tr):
@@ -353,6 +393,19 @@ def build_docx(db: Session, inv: SalesInvoice) -> tuple[bytes, list[str], dict]:
                 t2 = re.sub(rf"(?<![A-Za-z]){re.escape(base_cur)}(?![A-Za-z])", cur_label, t)
                 if t2 != t:
                     _set(p, t2)
+
+    if credit:
+        cn_no, cn_date = credit
+        title = _paras(tbl.findall(W + "tr")[0])
+        _set(title[0], f"INVOICE № {cn_no}")
+        second = title[1] if len(title) > 1 else copy.deepcopy(title[0])
+        if len(title) == 1:
+            title[0].addnext(second)
+        _set(second, f"CREDIT NOTE PASS AGAINST INVOICE № {inv.number}")
+        for p in _paras(tbl.findall(W + "tr")[1]):  # «Dated» / «Invoice Date» becomes the credit note's date
+            t = _t(p)
+            if long_date(inv_date) in t and (t.strip().startswith("Dated") or "ubmission" not in t):
+                _set(p, t.replace(long_date(inv_date), long_date(cn_date), 1))
 
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:

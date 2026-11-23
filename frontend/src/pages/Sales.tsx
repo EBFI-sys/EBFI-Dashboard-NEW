@@ -3,7 +3,7 @@ import { api, inr, money, monthLabel, thisMonth, today } from "../api";
 import CrudTable, { Field } from "../components/CrudTable";
 import { InvoiceFile } from "../components/Files";
 import { FileText } from "lucide-react";
-import { ErrorLine, Modal, useAsync } from "../components/ui";
+import { ErrorLine, Modal, Pill, useAsync } from "../components/ui";
 import { CURRENCIES, useRef_ } from "../refs";
 
 export const SALES_STATUSES = ["Not Verified", "Отправлен клиенту", "Paid"];
@@ -16,7 +16,8 @@ const fields: Field[] = [
   { key: "amount", label: "Сумма без GST", type: "money", currencyKey: "currency", required: true },
   { key: "gst_total", label: "GST, ₹", type: "money", form: false },
   { key: "wht", label: "WHT", type: "money", currencyKey: "currency", form: false, optional: true },
-  { key: "status", label: "Статус", type: "status", options: SALES_STATUSES, required: true },
+  { key: "status", label: "Статус", type: "status", options: SALES_STATUSES, required: true,
+    render: (r) => r.credit_note ? <span className="pill bad" title="Сторнирован кредит-нотой">{r.credit_note}</span> : <Pill status={r.status} /> },
   { key: "received_amount", label: "Получено", type: "money", currencyKey: "currency", hint: "Для индийских клиентов — сумма после удержания TDS" },
   { key: "outstanding", label: "К получению", type: "money", currencyKey: "currency", form: false },
   { key: "payment_date", label: "Дата оплаты", type: "date" },
@@ -197,7 +198,11 @@ function InvoiceDoc({ inv, onClose, onDone }: { inv: any; onClose: () => void; o
                   <button className="btn small ghost" onClick={() => setExtra(extra.filter((_, j) => j !== i))} aria-label="Убрать строку">×</button>
                 </div>
               ))}
-              <button className="btn small ghost" onClick={() => setExtra([...extra, { proto: 1, qty: "", rate: "", job: data.jobs?.[0] }])}>+ строка</button>
+              <div className="form-actions" style={{ justifyContent: "flex-start", marginTop: 0 }}>
+                <button className="btn small ghost" onClick={() => setExtra([...extra, { proto: 1, qty: "", rate: "", job: data.jobs?.[0] }])}>+ строка</button>
+                {data.suggested_extra?.length > 0 && <button className="btn small" title="По грузу, тоннажу и стране из карточки работы: лоты = тоннаж / 5000 вверх, ставки из инструкции"
+                  onClick={() => setExtra(data.suggested_extra)}>Подставить по грузу и тоннажу</button>}
+              </div>
             </div>
           )}
           {warnings.length > 0 && <ul className="problems">{warnings.map((w) => <li key={w}>{w}</li>)}</ul>}

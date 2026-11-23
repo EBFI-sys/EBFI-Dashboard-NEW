@@ -14,7 +14,7 @@ from .. import files, sharepoint
 from ..calc import Context, get_setting
 from ..config import settings
 from ..db import get_db
-from ..models import Setting, Client, Inspector, InspectorInvoice, Job, JobLine, PaymentMethod, SalesInvoice, TdsEntry, User
+from ..models import Setting, Client, CreditNote, Inspector, InspectorInvoice, Job, JobLine, PaymentMethod, SalesInvoice, TdsEntry, User
 from ..security import need
 from .crud import _commit, apply, make_crud, to_dict
 
@@ -90,7 +90,10 @@ def _sales_ser(o: SalesInvoice, db: Session):
     d["gst_total"] = float((o.cgst or 0) + (o.sgst or 0) + (o.igst or 0))
     # WHT the client keeps when paying (5%), in the invoice currency: it is not credited anywhere, so it is our loss
     d["wht"] = float(Decimal(o.amount) * Decimal(get_setting(db, "wht_rate"))) if c and c.wht else 0.0
-    d["outstanding"] = float(Decimal(o.amount) - Decimal(o.received_amount or 0)) if o.status != "Paid" else 0.0
+    cn = db.scalar(select(CreditNote).where(CreditNote.sales_invoice_id == o.id, CreditNote.deleted.is_(False)))
+    d["credit_note"] = cn.number if cn else None
+    credited = Decimal(cn.amount or 0) if cn else Decimal(0)
+    d["outstanding"] = float(max(Decimal(0), Decimal(o.amount) - Decimal(o.received_amount or 0) - credited)) if o.status != "Paid" else 0.0
     d["file_url"] = o.sp_file_url
     rule = invoice_rules.rule_for(c) if c else None
     d["template"] = rule.title if rule else None
@@ -310,6 +313,7 @@ def document_info(iid: int, db: Session = Depends(get_db), _=Depends(need("read"
         return info
     try:
         info["protos"] = _protos(db, inv)
+        info["suggested_extra"] = invoice_doc.suggest_marine(db, inv, info["protos"])
         _, info["warnings"], info["summary"] = invoice_doc.build_docx(db, inv)
     except invoice_doc.InvoiceError as e:
         info["warnings"].append(str(e))

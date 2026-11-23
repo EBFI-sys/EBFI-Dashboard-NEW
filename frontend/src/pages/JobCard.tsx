@@ -207,6 +207,9 @@ export default function JobCard() {
           <div className="facts-status"><dt>Статус работы</dt><dd><StatusSwitch j={j} canWrite={can("write")} onSaved={(nj) => saved({ ...j, ...nj }, `Статус: ${nj.status}`)} /></dd></div>
           <div><dt>Контакт клиента</dt><dd>{j.client_contact ?? "—"}</dd></div>
           <div><dt>Client Job Number</dt><dd>{j.client_job_number ?? "—"}</dd></div>
+          <div><dt>Тип услуги</dt><dd>{j.service_type ?? "Inspection"}</dd></div>
+          {j.equipment && <div><dt>Оборудование</dt><dd>{j.equipment}</dd></div>}
+          {(j.cargo || j.tonnage) && <div><dt>Груз / тоннаж</dt><dd>{[j.cargo, j.tonnage ? `${num(j.tonnage, 3).replace(/\.?0+$/, "")} MT` : null].filter(Boolean).join(" · ")}</dd></div>}
           {j.notes && <div style={{ gridColumn: "1 / -1" }}><dt>Примечания</dt><dd style={{ whiteSpace: "pre-wrap" }}>{j.notes}</dd></div>}
         </dl>
       </section>
