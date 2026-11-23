@@ -68,7 +68,6 @@ const TABS = [
 
 export default function References() {
   const [tab, setTab] = useState<string>("clients");
-  const { can } = useAuth();
   return (
     <div className="page">
       <header className="page-head"><h1>Справочники</h1></header>
@@ -77,8 +76,7 @@ export default function References() {
       {tab === "final" && <CrudTable columnFilters={false} endpoint="/final-clients" title="Финальный клиент" fields={finalClientFields} refName="final-clients" csvName="final-clients.csv" deleteRight="delete_work" />}
       {tab === "inspectors" && <CrudTable columnFilters={false} endpoint="/inspectors" title="Инспектор" fields={inspectorFields} refName="inspectors" defaults={{ currency: "USD" }} csvName="inspectors.csv" />}
       {tab === "vendors" && <CrudTable columnFilters={false} endpoint="/vendors" title="Завод (Vendor)" fields={vendorFields} refName="vendors" csvName="vendors.csv" />}
-      {tab === "fx" && <CrudTable columnFilters={false} endpoint="/fx-rates" title="Курс валют к INR" fields={fxFields} writeRight="settings" defaults={{ currency: "USD" }}
-        toolbar={(_, reload) => can("settings") && <FxFetch reload={reload} />} />}
+      {tab === "fx" && <CrudTable columnFilters={false} endpoint="/fx-rates" title="Курс валют к INR" fields={fxFields} writeRight="settings" defaults={{ currency: "USD" }} />}
       {tab === "settings" && <TaxSettings />}
       {tab === "storage" && <StorageSettings />}
       {tab === "pm" && <CrudTable columnFilters={false} endpoint="/payment-methods" title="Метод оплаты и РКО" fields={pmFields} refName="payment-methods" />}
@@ -114,23 +112,3 @@ function TaxSettings() {
   );
 }
 
-/** Month-end RBI (FBIL) rates: added by the server every day after 14:30 IST for months that are over; this runs it now. */
-function FxFetch({ reload }: { reload: () => void }) {
-  const [msg, setMsg] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  return (
-    <>
-      <button className="btn ghost" disabled={busy} title="Курс RBI на последний рабочий день каждого закончившегося месяца; уже внесённые курсы не меняются"
-        onClick={async () => {
-          setBusy(true);
-          try {
-            const r = await api.post("/fx/fetch");
-            const got = Object.entries<any>(r.added).map(([m, c]) => `${m}: ${Object.entries(c).map(([k, v]) => `${k} ${v}`).join(", ")}`);
-            setMsg(got.length ? `Добавлено — ${got.join("; ")}` : "Новых курсов нет: закончившиеся месяцы уже заполнены");
-            reload();
-          } catch (e: any) { setMsg(e.message); } finally { setBusy(false); }
-        }}>{busy ? "Загружаю…" : "Курсы RBI"}</button>
-      {msg && <span className="muted small">{msg}</span>}
-    </>
-  );
-}

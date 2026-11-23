@@ -1,4 +1,4 @@
-"""Background jobs of the API process: Telegram linking, the 09:00 digest, month-end FX rates."""
+"""Background jobs of the API process: Telegram linking and the 09:00 digest."""
 import datetime as dt
 import logging
 import os
@@ -7,7 +7,7 @@ import time
 
 from sqlalchemy import select
 
-from . import clock, digest, fx_auto, telegram
+from . import clock, digest, telegram
 from .config import settings
 from .db import SessionLocal
 from .models import Setting, User
@@ -115,12 +115,6 @@ def tick() -> None:
         if telegram.enabled() and _due(db, "digest:last", settings.digest_time):
             _set(db, "digest:last", clock.today().isoformat())
             log.warning("morning digest sent to %s users", send_digests())
-        if settings.fx_source and _due(db, "fx:last", "14:30"):
-            _set(db, "fx:last", clock.today().isoformat())
-            try:
-                fx_auto.import_month_end(db)
-            except Exception as e:  # noqa: BLE001
-                log.warning("fx import: %s", e)
 
 
 def start() -> None:

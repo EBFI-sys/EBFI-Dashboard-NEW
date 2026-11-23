@@ -18,7 +18,6 @@ class Settings:
     # Telegram bot for the morning digest (@BotFather); empty = digest off
     telegram_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     digest_time: str = os.getenv("DIGEST_TIME", "09:00")  # India time
-    fx_source: str = os.getenv("FX_SOURCE", "https://www.msei.in/markets/currency/historical-data/rbireferenceratearchives")
     max_failed_logins: int = 5
     lockout_minutes: int = 15
 

@@ -1,8 +1,8 @@
-"""«Мой день», the Telegram digest settings in the profile, the month-end FX import button."""
+"""«Мой день» and the Telegram digest settings in the profile."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from .. import digest, fx_auto, scheduler, telegram
+from .. import digest, scheduler, telegram
 from ..config import settings
 from ..db import get_db
 from ..models import User
@@ -67,12 +67,3 @@ def tg_test(user: User = Depends(current_user)):
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Telegram: {e}")
     return {"ok": True}
-
-
-@r.post("/fx/fetch")
-def fx_fetch(db: Session = Depends(get_db), _=Depends(need("settings"))):
-    try:
-        added = fx_auto.import_month_end(db)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(502, f"Не удалось получить курсы: {e}")
-    return {"added": added}
