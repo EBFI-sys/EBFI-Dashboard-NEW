@@ -68,9 +68,15 @@ def _sales_save(o: SalesInvoice, data: dict, db: Session, user, created):
 
 
 def _sales_after(o: SalesInvoice, db: Session):
-    """Indian clients withhold TDS: keep one TDS register entry per invoice."""
+    """Indian clients withhold TDS: keep one TDS register entry per invoice. An invoice cancelled by a credit note
+    will never be paid, so it has no TDS."""
     client = db.get(Client, o.client_id)
     entry = db.scalar(select(TdsEntry).where(TdsEntry.sales_invoice_id == o.id))
+    credited = db.scalar(select(CreditNote.id).where(CreditNote.sales_invoice_id == o.id, CreditNote.deleted.is_(False)).limit(1))
+    if credited:
+        if entry:
+            db.delete(entry)
+        return
     if client and client.is_indian and o.taxable_inr and not o.deleted:
         amt = (Decimal(o.taxable_inr) * Decimal(get_setting(db, "tds_rate"))).quantize(Decimal("0.01"))
         if not entry:

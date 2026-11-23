@@ -143,6 +143,9 @@ def make_crud(model, prefix: str, *, order_by=None, search: list[str] = (), hide
                 raise HTTPException(404, "Не найдено")
             obj.deleted = False
             _commit(db)
+            if after_save:
+                after_save(obj, db)
+                _commit(db)
             return ser(obj, db)
 
     return r

@@ -1,5 +1,6 @@
-"""Credit notes (CN-2627-NNN): owner and accountant only. A credit note cancels a client invoice; its jobs can be
-freed to be invoiced again (e.g. to another payer, as with SPEX HK → TÜV Austria)."""
+"""Credit notes (CN-2627-NNN): owner and accountant only. A credit note cancels a client invoice completely: it will
+not be paid, so its TDS entry goes; the invoice number stays used. Its jobs can be freed to be invoiced again under
+a new number (e.g. to another payer, as with SPEX HK → TÜV Austria). Credit note numbers are never reused."""
 import re
 from datetime import date
 from decimal import Decimal
@@ -13,7 +14,7 @@ from .. import clock, files, invoice_doc, sharepoint
 from .. import sharepoint as sp
 from ..calc import get_setting
 from ..db import get_db
-from ..models import Client, CreditNote, JobLine, SalesInvoice, Setting
+from ..models import Client, CreditNote, JobLine, SalesInvoice, Setting, TdsEntry
 from ..security import need
 from .crud import _commit, make_crud, to_dict
 
@@ -54,6 +55,10 @@ def _save(o: CreditNote, data: dict, db: Session, user, created: bool):
         o.number = (o.number or "").strip() or next_cn_number(db, o.date)
         if not CN_RE.match(o.number):
             raise HTTPException(422, "Номер кредит-ноты: CN-2627-NNN")
+        n = int(CN_RE.match(o.number)[2])
+        used = {int(m[2]) for (x,) in db.execute(select(CreditNote.number)) if (m := CN_RE.match(x or ""))}  # deleted ones too
+        if n in used:
+            raise HTTPException(409, f"Номер {o.number} уже использован — номера кредит-нот не повторяются (следующий {next_cn_number(db, o.date)})")
         o.date = o.date or clock.today()
         o.client_id, o.currency = inv.client_id, inv.currency
         o.amount = o.amount if o.amount is not None else inv.amount
@@ -68,12 +73,30 @@ def _save(o: CreditNote, data: dict, db: Session, user, created: bool):
         for l in db.scalars(select(JobLine).where(JobLine.sales_invoice_id == inv.id)):
             l.sales_invoice_id = None
         o.released = True
-    inv.status = inv.status if inv.status == "Paid" else "Not Verified"
+    if created:
+        db.flush()
+        for t in db.scalars(select(TdsEntry).where(TdsEntry.sales_invoice_id == inv.id)):  # the invoice will not be paid
+            db.delete(t)
 
 
 def _before_delete(o: CreditNote, db: Session):
+    """A credit note entered by mistake: the invoice is valid again and gets its TDS entry back; the CN number stays used."""
     if o.released:
         raise HTTPException(400, "Работы этой кредит-ноты уже освобождены для нового инвойса — удалить её нельзя")
+    from .money import _sales_after
+    inv = db.get(SalesInvoice, o.sales_invoice_id)
+    o.deleted = True
+    db.flush()
+    if inv:
+        _sales_after(inv, db)
+
+
+def _after(o: CreditNote, db: Session):
+    """Keeps the invoice's TDS entry in line (also when a deleted credit note is brought back with «Отменить»)."""
+    from .money import _sales_after
+    inv = db.get(SalesInvoice, o.sales_invoice_id)
+    if inv:
+        _sales_after(inv, db)
 
 
 @r.get("/credit-notes/next-number")
@@ -136,5 +159,6 @@ def cn_download(cid: int, kind: str, db: Session = Depends(get_db), _=Depends(ne
 
 r.include_router(make_crud(CreditNote, "/credit-notes", order_by=[CreditNote.date.desc().nulls_last(), CreditNote.id.desc()],
                            search=["number", "reason"], serialize=_ser, before_save=_save, before_delete=_before_delete,
+                           after_save=_after,
                            readonly={"client_id", "currency", "gst_inr", "line_ids", "released", "doc_url", "pdf_url"},
                            read_right="credit_notes", write_right="credit_notes", delete_right="credit_notes"))
