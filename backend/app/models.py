@@ -41,6 +41,8 @@ class User(Base, TimestampMixin):
     locked_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     legacy_letters: Mapped[str | None] = mapped_column(String(20))
     color: Mapped[str | None] = mapped_column(String(9))  # «Чья» label colour, #rrggbb  # old Cyrillic letters, e.g. "Л"
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(40))  # morning digest goes here
+    digest: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
 
 # ---------------------------------------------------------------- references

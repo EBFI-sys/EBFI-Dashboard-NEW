@@ -1,3 +1,4 @@
+import { FileUp } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, money, monthLabel, num, today } from "../api";
@@ -55,6 +56,41 @@ function WorkPicker({ value, onChange, row, patch }: { value: number[]; onChange
   );
 }
 
+/** «Заполнить из файла»: the inspector's PDF or Word invoice fills in the form; the file is saved with the invoice. */
+function ReadFile({ row, patch }: { row: any; patch: (d: Record<string, unknown>) => void }) {
+  const [state, setState] = useState<{ busy?: boolean; msg?: string; err?: string }>({});
+  return (
+    <div className="read-file">
+      <label className="btn small file-btn">
+        <FileUp size={14} aria-hidden />{state.busy ? "Читаю файл…" : row._file ? "Другой файл" : "Заполнить из файла (PDF / Word)"}
+        <input type="file" accept=".pdf,.docx" hidden onChange={async (e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (!f) return;
+          setState({ busy: true });
+          const fd = new FormData();
+          fd.append("file", f);
+          try {
+            const r = await api.post("/inspector-invoices/read", fd);
+            const found: Record<string, unknown> = { _file: f };
+            for (const k of ["inspector_id", "number", "invoice_date", "amount", "currency", "days", "rate"]) if (r[k] != null) found[k] = r[k];
+            if (r.job_ids?.length) found.job_ids = r.job_ids;
+            patch(found);
+            const got = ["inspector_id", "number", "invoice_date", "amount", "job_ids"].filter((k) => r[k] != null && (k !== "job_ids" || r.job_ids.length)).length;
+            setState({ msg: r.text_found === false ? r.message
+              : `Заполнено из «${f.name}»: ${got} из 5 полей${r.unknown_jobs?.length ? `. В Табеле нет работ ${r.unknown_jobs.join(", ")}` : ""}. Проверьте и сохраните — файл сохранится вместе со счётом.` });
+          } catch (err: any) {
+            patch({ _file: f });
+            setState({ err: `${err.message}. Файл сохранится со счётом, поля заполните вручную.` });
+          }
+        }} />
+      </label>
+      {state.msg && <small>{state.msg}</small>}
+      {state.err && <small className="error">{state.err}</small>}
+    </div>
+  );
+}
+
 function CheckModal({ inv, onClose }: { inv: any; onClose: () => void }) {
   const c = inv.check;
   return (
@@ -91,6 +127,7 @@ export default function Payouts() {
   const [check, setCheck] = useState<any | null>(null);
 
   const fields: Field[] = [
+    { key: "_read", label: "Счёт инспектора", list: false, wide: true, input: ({ row, patch }) => row.id ? <span className="muted small">Файл — кнопкой «Загрузить» / «Файл» в строке реестра</span> : <ReadFile row={row} patch={patch} /> },
     { key: "inspector_id", label: "Инспектор", type: "ref", ref: "inspectors", required: true },
     { key: "number", label: "Номер счёта" },
     { key: "invoice_date", label: "Дата счёта", type: "date" },
@@ -133,6 +170,13 @@ export default function Payouts() {
             <button className={show === "all" ? "on" : ""} onClick={() => setShow("all")}>Все</button>
           </div>
         )}
+        afterSave={async (saved, d) => {
+          if (d._file && saved?.id) {
+            const fd = new FormData();
+            fd.append("file", d._file);
+            await api.post(`/inspector-invoices/${saved.id}/file`, fd);
+          }
+        }}
         rowActions={(r, reload) => <InvoiceFile url={r.sp_file_url} hasFile={r.has_file} uploadUrl={`/api/inspector-invoices/${r.id}/file`} reload={reload} />} />
       {check && <CheckModal inv={check} onClose={() => setCheck(null)} />}
     </div>

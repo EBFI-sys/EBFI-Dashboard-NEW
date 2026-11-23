@@ -49,6 +49,8 @@ type Props = {
   columnFilters?: boolean; // Excel-style filters in column headers (default true)
   deleteRight?: string; // right needed to delete a record (default "delete": admin only)
   mobileRow?: (row: any, actions: React.ReactNode) => React.ReactNode; // the row in the compact phone list
+  formExtra?: (data: any) => React.ReactNode;
+  afterSave?: (saved: any, data: any) => Promise<void>; // e.g. upload a file chosen in the form
 };
 
 /** Indian financial year quarter: 2026-11-15 -> "Q3 FY27". */
@@ -219,15 +221,15 @@ function Wrap({ as, children, ...rest }: { as: "div" | "label"; children: React.
   return as === "div" ? <div {...rest}>{children}</div> : <label {...rest}>{children}</label>;
 }
 
-export function EditForm({ fields, initial, onSave, onCancel, title, onFieldChange, onDelete }: {
+export function EditForm({ fields, initial, onSave, onCancel, title, onFieldChange, onDelete, extra }: {
   fields: Field[]; initial: any; onSave: (d: any) => Promise<void>; onCancel: () => void; title: string;
   onDelete?: () => Promise<void>; // shows «Удалить» in the footer, with a confirmation
+  extra?: (data: any) => React.ReactNode; // shown under the fields (warnings that depend on what is typed)
   onFieldChange?: (key: string, value: any, data: any) => Promise<Record<string, unknown> | void> | Record<string, unknown> | void;
 }) {
   const [data, setData] = useState<any>({ ...initial });
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [sure, setSure] = useState(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     for (const f of fields) {
@@ -260,19 +262,13 @@ export function EditForm({ fields, initial, onSave, onCancel, title, onFieldChan
             {f.hint && <small>{f.hint}</small>}
           </Wrap>
         ))}
+        {extra?.(data)}
         <ErrorLine error={err} />
         <div className={"form-actions wide" + (onDelete ? " with-delete" : "")}>
-          {onDelete && (sure ? (
-            <span className="del-confirm">
-              <span className="muted small">Скрыть запись? Останется в журнале.</span>
-              <button type="button" className="btn danger small" onClick={async () => { try { await onDelete(); } catch (e: any) { setErr(e.message); setSure(false); } }}>Да, удалить</button>
-              <button type="button" className="btn ghost small" onClick={() => setSure(false)}>Нет</button>
-            </span>
-          ) : <button type="button" className="btn ghost danger-text del-btn" onClick={() => setSure(true)}>Удалить</button>)}
-          {!sure && <>
-            <button type="button" className="btn ghost" onClick={onCancel}>Отмена</button>
-            <button type="submit" className="btn primary" disabled={busy}>{busy ? "Сохраняю…" : "Сохранить"}</button>
-          </>}
+          {onDelete && <button type="button" className="btn ghost danger-text del-btn" title="Удалить — можно отменить в течение 6 секунд"
+            onClick={async () => { try { await onDelete(); } catch (e: any) { setErr(e.message); } }}>Удалить</button>}
+          <button type="button" className="btn ghost" onClick={onCancel}>Отмена</button>
+          <button type="submit" className="btn primary" disabled={busy}>{busy ? "Сохраняю…" : "Сохранить"}</button>
         </div>
       </form>
     </Modal>
@@ -343,19 +339,33 @@ export default function CrudTable(p: Props) {
   }, [data, p.periodKey]);
 
   const save = async (d: any) => {
-    if (d.id) await api.patch(`${p.endpoint}/${d.id}`, d);
-    else await api.post(p.endpoint, d);
+    const body = Object.fromEntries(Object.entries(d).filter(([k]) => !k.startsWith("_")));
+    const saved = d.id ? await api.patch(`${p.endpoint}/${d.id}`, body) : await api.post(p.endpoint, body);
+    if (p.afterSave) await p.afterSave(saved, d);
     if (p.refName) invalidateRef(p.refName);
     setEdit(null);
     setToast("Сохранено");
     reload();
   };
+  const [undo, setUndo] = useState<(() => void) | null>(null);
   const remove = async (row: any) => {
-    // confirmation happens in DeleteBar
-    await api.del(`${p.endpoint}/${row.id}`);
+    // no «are you sure?»: the record goes at once and «Отменить» on the toast brings it back
+    const r = await api.del(`${p.endpoint}/${row.id}`);
     if (p.refName) invalidateRef(p.refName);
     setEdit(null);
-    setToast("Удалено");
+    setUndo(() => async () => {
+      try {
+        if (r?.soft) await api.post(`${p.endpoint}/${row.id}/restore`);
+        else await api.post(p.endpoint, Object.fromEntries(Object.entries(row).filter(([k]) => !["id", "created_at", "updated_at"].includes(k))));
+        if (p.refName) invalidateRef(p.refName);
+        setToast("Восстановлено");
+      } catch (e: any) {
+        setToast(`Не удалось восстановить: ${e.message}`);
+      }
+      setUndo(null);
+      reload();
+    });
+    setToast("Запись удалена");
     reload();
   };
 
@@ -390,16 +400,16 @@ export default function CrudTable(p: Props) {
       </div>
       <ErrorLine error={error} />
       <DataTable rows={rows} cols={tableCols} storageKey={p.endpoint} mobileRow={p.mobileRow} filters={p.columnFilters !== false} onRowClick={p.onRowClick} onVisible={setVisible}
-        empty={loading ? "Загрузка…" : p.allowCreate === false ? "Пока пусто." : "Пока пусто. Нажмите «Добавить», чтобы создать первую запись."}
+        loading={loading} empty={loading ? "Загрузка…" : p.allowCreate === false ? "Пока пусто." : "Пока пусто. Нажмите «Добавить», чтобы создать первую запись."}
         actions={(r) => (<>
           {p.rowActions?.(r, reload)}
           {canWrite && <button className="btn small ghost icon" title="Изменить" aria-label="Изменить" onClick={() => setEdit(r)}><Pencil size={14} aria-hidden /></button>}
         </>)} />
       {edit && (
-        <EditForm title={edit.id ? "Изменить" : "Новая запись"} fields={p.fields} initial={edit} onSave={save} onCancel={() => setEdit(null)}
+        <EditForm title={edit.id ? "Изменить" : "Новая запись"} fields={p.fields} initial={edit} onSave={save} onCancel={() => setEdit(null)} extra={p.formExtra}
           onDelete={edit.id && can(p.deleteRight ?? "delete") ? () => remove(edit) : undefined} />
       )}
-      <Toast text={toast} onDone={() => setToast(null)} />
+      <Toast text={toast} undo={undo} onDone={() => { setToast(null); setUndo(null); }} />
     </section>
   );
 }

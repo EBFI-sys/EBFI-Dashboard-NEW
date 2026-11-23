@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { Me, useAuth } from "../auth";
-import { ErrorLine, Toast } from "../components/ui";
+import { ErrorLine, Toast, useAsync } from "../components/ui";
 
 export default function Profile() {
   const { me, setMe } = useAuth();
@@ -50,9 +50,44 @@ export default function Profile() {
             </form>
           )}
         </section>
+        <TelegramBox />
       </div>
       <ErrorLine error={err} />
       <Toast text={toast} onDone={() => setToast(null)} />
     </div>
+  );
+}
+
+/** The 09:00 morning digest in Telegram: link this user's chat with a one-time link, test, switch off. */
+function TelegramBox() {
+  const { data, reload } = useAsync(() => api.get("/me/telegram"), []);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [link, setLink] = useState<string | null>(null);
+  if (!data) return null;
+  const act = async (f: () => Promise<unknown>, ok: string) => { setMsg(null); try { await f(); setMsg(ok); reload(); } catch (e: any) { setMsg(e.message); } };
+  return (
+    <section className="card">
+      <h2>Утренняя сводка в Telegram</h2>
+      <div className="tg-box">
+        <p className="muted">Каждый день в {data.time} по Индии: отчёты за вчера к сдаче, работы, которые пора завершить, заявки в процессе. По вашим работам («Чья»).</p>
+        {!data.enabled && <p className="muted small">Бот ещё не настроен на сервере (TELEGRAM_BOT_TOKEN).</p>}
+        {data.enabled && !data.linked && (
+          <>
+            <button className="btn primary" onClick={async () => { try { const r = await api.post("/me/telegram/link"); setLink(r.url); window.open(r.url, "_blank"); } catch (e: any) { setMsg(e.message); } }}>Подключить Telegram</button>
+            {link && <p className="small">Откроется чат с ботом{data.bot ? ` @${data.bot}` : ""} — нажмите «Start». Если не открылся: <a href={link} target="_blank" rel="noreferrer">{link}</a>. Потом обновите эту страницу.</p>}
+          </>
+        )}
+        {data.linked && (
+          <>
+            <label className="check"><input type="checkbox" checked={data.digest} onChange={(e) => act(() => api.patch("/me/telegram", { digest: e.target.checked }), e.target.checked ? "Сводка включена" : "Сводка выключена")} /> Присылать сводку каждое утро</label>
+            <div className="form-actions" style={{ justifyContent: "flex-start" }}>
+              <button className="btn" onClick={() => act(() => api.post("/me/telegram/test"), "Сводка отправлена в Telegram")}>Прислать сейчас</button>
+              <button className="btn ghost" onClick={() => act(() => api.del("/me/telegram"), "Telegram отключён")}>Отключить</button>
+            </div>
+          </>
+        )}
+        {msg && <p className="small">{msg}</p>}
+      </div>
+    </section>
   );
 }

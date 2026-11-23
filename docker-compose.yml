@@ -33,6 +33,9 @@ services:
       MS_CLIENT_SECRET: ${MS_CLIENT_SECRET:-}
       MS_SITE_ID: ${MS_SITE_ID:-}
       MS_ROOT: ${MS_ROOT:-EBFI}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      DIGEST_TIME: ${DIGEST_TIME:-09:00}
+      SITE_ADDRESS: ${SITE_ADDRESS:-}
     volumes:
       - uploads:/data/uploads
       - ./import:/data/import:ro

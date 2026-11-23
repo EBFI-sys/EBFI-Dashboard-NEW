@@ -737,6 +737,34 @@ def download_job_file(jid: int, item_id: str, db: Session = Depends(get_db), _=D
         raise HTTPException(502, f"OneDrive: {e}")
 
 
+# ---------------------------------------------------------------- inspectors already booked
+@r.post("/inspectors/busy")
+def inspectors_busy(data: dict, db: Session = Depends(get_db), _=Depends(need("read"))):
+    """For each inspector: the days of `dates_text` on which they already work on another job.
+    {"inspector_ids": [..], "dates_text": "24-26.11.2026", "exclude_job_id": 5} → {"12": [{date, job_id, job_number}]}"""
+    ids = [int(i) for i in (data.get("inspector_ids") or []) if i]
+    want = set(parse_dates(data.get("dates_text"), _this_month())) if data.get("dates_text") else set()
+    if not ids or not want:
+        return {}
+    skip = data.get("exclude_job_id")
+    lo, hi = min(want), max(want)
+    months, cur = set(), lo.replace(day=1)
+    while cur <= hi:
+        months.add(cur.strftime("%Y-%m"))
+        cur = (cur + dt.timedelta(days=32)).replace(day=1)
+    out: dict[str, list] = {}
+    q = select(JobLine).join(Job).where(JobLine.deleted.is_(False), Job.deleted.is_(False), JobLine.inspector_id.in_(ids),
+                                        JobLine.month.in_(months))
+    for l in db.scalars(q):
+        if skip and l.job_id == int(skip):
+            continue
+        for d in sorted(want & set(parse_dates(l.dates_text, l.month))):
+            out.setdefault(str(l.inspector_id), []).append({"date": d.isoformat(), "job_id": l.job_id, "job_number": l.job.job_number})
+    for v in out.values():
+        v.sort(key=lambda x: (x["date"], x["job_number"]))
+    return out
+
+
 # ---------------------------------------------------------------- calendar of agreed dates
 @r.get("/calendar")
 def calendar(month: str, db: Session = Depends(get_db), _=Depends(need("read"))):

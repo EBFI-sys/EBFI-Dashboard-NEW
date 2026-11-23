@@ -4,6 +4,7 @@ import { api, money, today } from "../api";
 import CrudTable, { Field } from "../components/CrudTable";
 import { ErrorLine, Modal, Pill, usePersisted } from "../components/ui";
 import { OwnerFilter, ownerMatch } from "../components/OwnerFilter";
+import { BusyWarning } from "../components/Busy";
 import { useAuth } from "../auth";
 import { CURRENCIES, useRef_ } from "../refs";
 
@@ -73,6 +74,7 @@ export default function Requests() {
             <OwnerFilter value={owner} onChange={setOwner} />
           </>
         )}
+        formExtra={(d) => <BusyWarning inspectorIds={d.inspector_ids ?? []} datesText={d.dates_text} />}
         mobileRow={(r, actions) => (
           <div className="lrow">
             <Pill status={r.status} />
@@ -143,6 +145,7 @@ function CreateJob({ req, onClose, onDone }: { req: any; onClose: () => void; on
             </div>
           )}
         </div>
+        <BusyWarning inspectorIds={[...pick]} datesText={dates} />
         <div className="transfer wide">
           <p className="muted small">Перенесётся в работу:</p>
           <dl>

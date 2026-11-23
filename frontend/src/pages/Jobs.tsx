@@ -8,6 +8,7 @@ import { EditForm, Field } from "../components/CrudTable";
 import DataTable, { Col } from "../components/DataTable";
 import { ErrorLine, Pill, useAsync, usePersisted } from "../components/ui";
 import { OwnerFilter, ownerMatch } from "../components/OwnerFilter";
+import { BusyWarning } from "../components/Busy";
 import { CURRENCIES, loadRef, useRef_ } from "../refs";
 
 export const jobFields: Field[] = [
@@ -179,13 +180,14 @@ export default function Jobs() {
           rowClass={(j) => (j.flag ? "late" : undefined)}
           rowTitle={(j) => j.overdue ? "Месяц закрыт больше суток назад, а работа не завершена"
             : j.late_edit_at ? "Закрытый месяц изменён позже суток после закрытия — проверьте в карточке" : undefined}
-          empty={loading ? "Загрузка…" : "Работ не найдено."} />
+          loading={loading} empty={loading ? "Загрузка…" : "Работ не найдено."} />
       </section>
       {cal && <JobsCalendar onClose={() => setCal(false)} />}
       {dates && <JobDatesModal job={dates} inspectors={inspectors} onClose={() => setDates(null)} onSaved={reload} />}
       {add && (
         <EditForm title="Новая работа" fields={[...jobFields, ...firstAssignment]}
           initial={{ status: "В работе", a_currency: "USD", a_inspector_currency: "USD" }} onCancel={() => setAdd(false)} onSave={create}
+          extra={(d) => <BusyWarning inspectorIds={[d.a_inspector_id]} datesText={d.a_dates_text} />}
           onFieldChange={async (k, v) => {
             if (k === "client_id" && v) {
               const out: Record<string, unknown> = {};

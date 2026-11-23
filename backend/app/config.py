@@ -15,6 +15,10 @@ class Settings:
     ms_client_secret: str = os.getenv("MS_CLIENT_SECRET", "")
     ms_site_id: str = os.getenv("MS_SITE_ID", "")
     ms_root: str = os.getenv("MS_ROOT", "EBFI")  # top folder in that OneDrive
+    # Telegram bot for the morning digest (@BotFather); empty = digest off
+    telegram_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    digest_time: str = os.getenv("DIGEST_TIME", "09:00")  # India time
+    fx_source: str = os.getenv("FX_SOURCE", "https://www.msei.in/markets/currency/historical-data/rbireferenceratearchives")
     max_failed_logins: int = 5
     lockout_minutes: int = 15
 

@@ -132,7 +132,18 @@ def make_crud(model, prefix: str, *, order_by=None, search: list[str] = (), hide
         else:
             db.delete(obj)
         _commit(db)
-        return {"ok": True}
+        return {"ok": True, "soft": has_deleted}
+
+    if has_deleted:
+        @r.post("/{item_id}/restore")
+        def restore(item_id: int, db: Session = Depends(get_db), user: User = Depends(need(delete_right))):
+            """«Отменить» right after deleting."""
+            obj = db.get(model, item_id)
+            if not obj:
+                raise HTTPException(404, "Не найдено")
+            obj.deleted = False
+            _commit(db)
+            return ser(obj, db)
 
     return r
 

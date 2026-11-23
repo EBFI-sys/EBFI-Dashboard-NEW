@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Popover, usePersisted } from "./ui";
+import { Popover, Skeleton, usePersisted } from "./ui";
 
 /** One column of a DataTable. `text` gives the value used for filtering and sorting (defaults to row[key]). */
 export type Col = {
@@ -24,6 +24,7 @@ type Props = {
   onRowClick?: (row: any) => void;
   rowClass?: (row: any) => string | undefined;
   mobileRow?: (row: any, actions: React.ReactNode) => React.ReactNode; // the row in the compact phone list
+  loading?: boolean; // first load: placeholder rows instead of an empty table
   rowTitle?: (row: any) => string | undefined;
   actions?: (row: any) => React.ReactNode;
   empty?: React.ReactNode;
@@ -146,7 +147,7 @@ function FilterMenu({ col, rows, selected, onChange, onSort, close, at }: {
   );
 }
 
-export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, rowClass, rowTitle, mobileRow, actions, empty, filters = true, onVisible, footer, className, storageKey, footLabel }: Props) {
+export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, rowClass, rowTitle, mobileRow, loading, actions, empty, filters = true, onVisible, footer, className, storageKey, footLabel }: Props) {
   const [shownExtra, setShownExtra] = useState<Set<string>>(() => new Set(loadShown(storageKey) ?? []));
   const saveShown = (s: Set<string>) => {
     setShownExtra(s);
@@ -197,6 +198,7 @@ export default function DataTable({ rows, cols: allCols, rowKey, onRowClick, row
   const active = Object.values(sel).filter(Boolean).length;
   const span = cols.length + (actions ? 1 : 0);
 
+  if (loading && rows.length === 0) return <Skeleton rows={8} />;
   return (
     <div className={"table-wrap " + (className ?? "")}>
       {((filters && active > 0) || hasOptional) && (

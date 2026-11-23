@@ -156,13 +156,26 @@ export function ErrorLine({ error }: { error: string | null }) {
   return error ? <p className="error" role="alert">{error}</p> : null;
 }
 
-export function Toast({ text, onDone }: { text: string | null; onDone: () => void }) {
+export function Toast({ text, onDone, undo }: { text: string | null; onDone: () => void; undo?: (() => void) | null }) {
   useEffect(() => {
     if (!text) return;
-    const t = setTimeout(onDone, 3500);
+    const t = setTimeout(onDone, undo ? 6000 : 3500);
     return () => clearTimeout(t);
-  }, [text, onDone]);
-  return text ? createPortal(<div className="toast" role="status">{text}</div>, document.body) : null;
+  }, [text, onDone, undo]);
+  return text ? createPortal(
+    <div className={"toast" + (undo ? " with-undo" : "")} role="status">
+      {text}
+      {undo && <button type="button" className="toast-undo" onClick={() => { undo(); onDone(); }}>Отменить</button>}
+    </div>, document.body) : null;
+}
+
+/** Skeleton rows while a list loads for the first time. */
+export function Skeleton({ rows = 6 }: { rows?: number }) {
+  return (
+    <div className="skeleton" aria-busy="true" aria-label="Загрузка">
+      {Array.from({ length: rows }, (_, i) => <div key={i} className="sk-row"><span /><span /><span /><span /></div>)}
+    </div>
+  );
 }
 
 /** useState that survives leaving the page, closing a job card and (for "local") restarting the app on the phone.
@@ -191,6 +204,12 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]) {
   useEffect(() => {
     if (active && !wasActive.current) setTick((t) => t + 1);
     wasActive.current = active;
+  }, [active]);
+  useEffect(() => {
+    if (!active) return;
+    const f = () => setTick((t) => t + 1);
+    window.addEventListener("ebfi:refresh", f);
+    return () => window.removeEventListener("ebfi:refresh", f);
   }, [active]);
   useEffect(() => {
     let live = true;

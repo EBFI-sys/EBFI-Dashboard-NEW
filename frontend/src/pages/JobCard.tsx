@@ -4,6 +4,7 @@ import { api, dateLabel, money, monthLabel, num, pct, today } from "../api";
 import { useAuth } from "../auth";
 import { ClientChip, OwnerChip } from "../components/Chips";
 import { JobDocuments } from "../components/Files";
+import { BusyWarning } from "../components/Busy";
 import { EditForm, Field, FieldInput } from "../components/CrudTable";
 import DataTable, { Col } from "../components/DataTable";
 import { ErrorLine, Modal, Pill, Toast, useAsync } from "../components/ui";
@@ -107,6 +108,7 @@ function Assignment({ job, a, canWrite, canDelete, onSaved }: { job: any; a: any
         {field(A.rko_override_inr)}
         {field(A.no_subcontractor)}
         {field(A.notes, " wide")}
+        <BusyWarning inspectorIds={[d.inspector_id]} datesText={d.dates_text} excludeJobId={job.id} />
       </div>
       <ErrorLine error={err} />
       {canWrite && (

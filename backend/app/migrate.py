@@ -33,6 +33,8 @@ STEPS = [
     # «CV отправлены» is no longer a separate status
     "UPDATE requests SET status = 'В процессе' WHERE status = 'CV отправлены'",
     "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS late_edit_at TIMESTAMPTZ",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_chat_id VARCHAR(40)",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS digest BOOLEAN NOT NULL DEFAULT true",
     "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS late_edit_by INTEGER REFERENCES users(id)",
     "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS late_edit_months VARCHAR(100)",
 ]

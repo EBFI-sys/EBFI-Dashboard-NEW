@@ -12,7 +12,7 @@ from ..security import hash_password, need
 from .crud import to_dict
 
 r = APIRouter()
-HIDE = {"password_hash", "totp_secret"}
+HIDE = {"password_hash", "totp_secret", "telegram_chat_id"}
 ROLES = {"admin", "accountant", "manager", "archived"}
 
 

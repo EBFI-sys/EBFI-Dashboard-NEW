@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { ActiveCtx, PageCtx, TrayBar, TrayCtx, TrayProvider } from "./components/ui";
-import { Clock, Menu, Moon, Sun, X, BookOpen, CalendarRange, FileText, Gauge, History, Inbox, Landmark, LineChart, UserCog, Wallet } from "lucide-react";
+import { Clock, ListChecks, Menu, Moon, RefreshCw, Sun, X, BookOpen, CalendarRange, FileText, Gauge, History, Inbox, Landmark, LineChart, UserCog, Wallet } from "lucide-react";
 import { AuthProvider, useAuth } from "./auth";
 import { CurrencyProvider } from "./currency";
 import "./styles.css";
@@ -11,6 +11,7 @@ import Dashboard from "./pages/Dashboard";
 import JobCard from "./pages/JobCard";
 import Jobs from "./pages/Jobs";
 import Login from "./pages/Login";
+import MyDay from "./pages/MyDay";
 import Payouts from "./pages/Payouts";
 import Pnl from "./pages/Pnl";
 import Profile from "./pages/Profile";
@@ -22,6 +23,7 @@ import Users from "./pages/Users";
 
 const NAV = [
   { group: "Работа", items: [
+    { to: "/my", label: "Мой день", icon: ListChecks },
     { to: "/", label: "Дашборд", end: true, icon: Gauge },
     { to: "/requests", label: "Заявки", icon: Inbox },
     { to: "/jobs", label: "Табель", icon: CalendarRange },
@@ -75,12 +77,12 @@ function IstClock() {
 }
 
 const PAGES: [string, React.ReactNode][] = [
-  ["/", <Dashboard />], ["/requests", <Requests />], ["/jobs", <Jobs />], ["/jobs/:id", <JobCard />], ["/pnl", <Pnl />],
+  ["/", <Dashboard />], ["/my", <MyDay />], ["/requests", <Requests />], ["/jobs", <Jobs />], ["/jobs/:id", <JobCard />], ["/pnl", <Pnl />],
   ["/sales", <Sales />], ["/payouts", <Payouts />], ["/tds", <Tds />], ["/references", <References />], ["/audit", <Audit />],
   ["/users", <Users />], ["/profile", <Profile />],
 ];
 const LABEL: Record<string, string> = {
-  "/": "Дашборд", "/requests": "Заявки", "/jobs": "Табель", "/pnl": "Финансовые результаты", "/sales": "Исходящие счета", "/payouts": "Входящие счета",
+  "/": "Дашборд", "/my": "Мой день", "/requests": "Заявки", "/jobs": "Табель", "/pnl": "Финансовые результаты", "/sales": "Исходящие счета", "/payouts": "Входящие счета",
   "/tds": "Реестр TDS", "/references": "Справочники", "/audit": "Журнал", "/users": "Пользователи", "/profile": "Профиль",
 };
 
@@ -143,12 +145,56 @@ function KeepAlive() {
 }
 
 /** Phone: the three working sections as a tab bar at the bottom, everything else under «Ещё». */
+/** Phone: pull the page down at the top to reload it. */
+function PullToRefresh() {
+  const [pull, setPull] = React.useState(0);
+  const [spin, setSpin] = React.useState(false);
+  React.useEffect(() => {
+    if (!window.matchMedia("(max-width: 820px)").matches) return;
+    let y0: number | null = null;
+    let d = 0;
+    const start = (e: TouchEvent) => {
+      y0 = window.scrollY <= 0 && document.body.style.overflow !== "hidden" && !document.querySelector(".msheet-back") ? e.touches[0].clientY : null;
+      d = 0;
+    };
+    const move = (e: TouchEvent) => {
+      if (y0 == null) return;
+      d = e.touches[0].clientY - y0;
+      if (d > 0 && window.scrollY <= 0) setPull(Math.min(d, 120));
+      else { y0 = null; setPull(0); }
+    };
+    const end = () => {
+      if (y0 != null && d > 75) {
+        setSpin(true);
+        window.dispatchEvent(new Event("ebfi:refresh"));
+        setTimeout(() => setSpin(false), 900);
+      }
+      y0 = null;
+      setPull(0);
+    };
+    window.addEventListener("touchstart", start, { passive: true });
+    window.addEventListener("touchmove", move, { passive: true });
+    window.addEventListener("touchend", end);
+    return () => {
+      window.removeEventListener("touchstart", start);
+      window.removeEventListener("touchmove", move);
+      window.removeEventListener("touchend", end);
+    };
+  }, []);
+  if (!pull && !spin) return null;
+  return (
+    <div className={"ptr" + (spin ? " spin" : "")} style={{ opacity: spin ? 1 : Math.min(1, pull / 75), transform: `translateY(${spin ? 30 : pull / 2}px) rotate(${pull * 3}deg)` }}>
+      <RefreshCw aria-hidden />
+    </div>
+  );
+}
+
 function MobileNav() {
   const { me, logout, can } = useAuth();
   const [open, setOpen] = React.useState(false);
   const loc = useLocation();
   React.useEffect(() => setOpen(false), [loc.pathname]);
-  const main = NAV[0].items;
+  const main = NAV[0].items.filter((n) => n.to !== "/");  // Мой день, Заявки, Табель; Дашборд is under «Ещё»
   const onMain = main.some((n) => (n.end ? loc.pathname === n.to : loc.pathname.startsWith(n.to)));
   return (
     <>
@@ -163,10 +209,10 @@ function MobileNav() {
       {open && (
         <div className="msheet-back" onClick={(e) => e.target === e.currentTarget && setOpen(false)}>
           <div className="msheet" role="dialog" aria-label="Все разделы">
-            {NAV.slice(1).map((g) => (
+            {NAV.map((g) => ({ ...g, items: g.items.filter((n) => !main.includes(n)) })).filter((g) => g.items.length).map((g) => (
               <div key={g.group}>
                 <div className="nav-group">{g.group}</div>
-                {g.items.map((n) => <NavLink key={n.to} to={n.to}><n.icon aria-hidden />{n.label}</NavLink>)}
+                {g.items.map((n) => <NavLink key={n.to} to={n.to} end={n.end}><n.icon aria-hidden />{n.label}</NavLink>)}
                 {g.group === "Система" && can("users") && <NavLink to="/users"><UserCog aria-hidden />Пользователи</NavLink>}
               </div>
             ))}
@@ -228,6 +274,7 @@ function Shell() {
         <KeepAlive />
       </main>
       <MobileNav />
+      <PullToRefresh />
     </div>
   );
 }

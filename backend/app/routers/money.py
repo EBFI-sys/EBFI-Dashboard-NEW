@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import clock
+from .. import invoice_read, clock
 from .. import files, sharepoint
 from ..calc import Context, get_setting
 from ..config import settings
@@ -266,6 +266,20 @@ def _ii_save(o: InspectorInvoice, data: dict, db: Session, user, created):
         o.paid_date = clock.today()
     if not o.inspector_id or o.amount is None:
         raise HTTPException(422, "Нужны инспектор и сумма")
+
+
+@r.post("/inspector-invoices/read")
+async def read_invoice(file: UploadFile = File(...), db: Session = Depends(get_db), _=Depends(need("write"))):
+    """Fill the new-invoice form from the inspector's PDF or Word file."""
+    content = await file.read()
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(422, "Файл больше 25 MB")
+    try:
+        return invoice_read.read(db, file.filename or "", content)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:  # noqa: BLE001 - a damaged file
+        raise HTTPException(422, f"Не удалось прочитать файл: {e}")
 
 
 r.include_router(make_crud(InspectorInvoice, "/inspector-invoices",
