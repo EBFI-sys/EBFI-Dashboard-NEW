@@ -5,11 +5,11 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import invoice_read, clock
+from .. import clock, invoice_doc, invoice_read, invoice_rules
 from .. import files, sharepoint
 from ..calc import Context, get_setting
 from ..config import settings
@@ -48,7 +48,8 @@ def _sales_save(o: SalesInvoice, data: dict, db: Session, user, created):
             o.fx_rate = Decimal(1)
         elif o.date:
             fx = Context(db).fx(o.date.strftime("%Y-%m"), o.currency)
-            o.fx_rate = fx.rate
+            # the invoice uses the RBI rate with 2 decimals (95.24), the same figure that is printed on it
+            o.fx_rate = Decimal(fx.rate).quantize(Decimal("0.01")) if fx.rate is not None else None
     manual_gst = any(k in data for k in ("cgst", "sgst", "igst"))
     if client.is_indian and o.fx_rate:
         o.taxable_inr = (Decimal(o.amount) * Decimal(o.fx_rate)).quantize(Decimal("0.01"))
@@ -91,6 +92,8 @@ def _sales_ser(o: SalesInvoice, db: Session):
     d["wht"] = float(Decimal(o.amount) * Decimal(get_setting(db, "wht_rate"))) if c and c.wht else 0.0
     d["outstanding"] = float(Decimal(o.amount) - Decimal(o.received_amount or 0)) if o.status != "Paid" else 0.0
     d["file_url"] = o.sp_file_url
+    rule = invoice_rules.rule_for(c) if c else None
+    d["template"] = rule.title if rule else None
     d["line_ids"] = [l.id for l in db.scalars(select(JobLine).where(JobLine.sales_invoice_id == o.id))]
     return d
 
@@ -144,36 +147,253 @@ def sales_statuses(_=Depends(need("read"))):
     return SALES_STATUSES
 
 
-@r.post("/sales-invoices/from-lines")
-def invoice_from_lines(data: dict, db: Session = Depends(get_db), user: User = Depends(need("write"))):
-    """Create a client invoice from selected job lines (same client and currency)."""
-    ids = data.get("line_ids") or []
-    lines = [db.get(JobLine, i) for i in ids]
+def _line_amount(l: JobLine) -> Decimal:
+    return Decimal(l.quantity or 0) * Decimal(l.client_rate or 0) + Decimal(l.overtime_client or 0)
+
+
+def _groups(lines: list[JobLine], rule, fx_of) -> list[list[JobLine]]:
+    """Split the chosen lines into invoices by the client's rule: per currency always; per job (TUV NORD, LRQA,
+    Qatar, marine), per coordinator (BV Singapore); no TUV Rheinland India invoice above ₹20 lakh with GST."""
+    def key(l: JobLine):
+        k = [l.currency]
+        if rule and rule.per_job:
+            k.append(l.job.job_number)
+        if rule and rule.per_coordinator:
+            k.append((l.job.client_contact or "").strip().lower())
+        return tuple(k)
+    groups: dict[tuple, list[JobLine]] = {}
+    for l in sorted(lines, key=lambda x: (x.job.job_number, x.month, x.grp or 1)):
+        groups.setdefault(key(l), []).append(l)
+    out = []
+    for g in groups.values():
+        fx = fx_of(g[0].currency) if rule and rule.limit_inr else None
+        if rule and rule.limit_inr and fx:
+            cur, cur_sum = [], Decimal(0)
+            by_job: dict[str, list[JobLine]] = {}
+            for l in g:
+                by_job.setdefault(l.job.job_number, []).append(l)
+            for job_lines in by_job.values():
+                s = sum(_line_amount(l) for l in job_lines) * Decimal(fx) * Decimal("1.18")
+                if cur and cur_sum + s > rule.limit_inr:
+                    out.append(cur)
+                    cur, cur_sum = [], Decimal(0)
+                cur += job_lines
+                cur_sum += s
+            if cur:
+                out.append(cur)
+        else:
+            out.append(g)
+    return out
+
+
+def _plan(db: Session, data: dict):
+    lines = [db.get(JobLine, i) for i in data.get("line_ids") or []]
     if not lines or any(l is None or l.deleted for l in lines):
         raise HTTPException(422, "Выберите строки работ")
+    if len({l.job.client_id for l in lines}) != 1:
+        raise HTTPException(422, "Все строки должны быть одного клиента")
+    client = db.get(Client, lines[0].job.client_id)
+    rule = invoice_rules.rule_for(client)
+    month = max(l.month for l in lines)
+    inv_date = date.fromisoformat(data["date"]) if data.get("date") else (
+        invoice_doc.month_end(month) if not rule or rule.date == "month_end" else clock.today())
+    ctx = Context(db)
+    fx_of = lambda c: ctx.fx(month, c).rate if c != "INR" else Decimal(1)  # noqa: E731
+    if data.get("split", True):
+        groups = _groups(lines, rule, fx_of)
+    else:
+        groups = [lines]
+    return lines, client, rule, inv_date, groups
+
+
+@r.post("/sales-invoices/from-lines/plan")
+def invoice_plan(data: dict, db: Session = Depends(get_db), _=Depends(need("read"))):
+    """How the chosen lines will be invoiced: the client's template, its rules, the invoice date and the split."""
+    if not data.get("line_ids"):
+        return {"template": None, "notes": [], "groups": [], "date": None}
+    lines, client, rule, inv_date, groups = _plan(db, data)
+    return {"template": rule.title if rule else None, "code": rule.code if rule else None, "notes": list(rule.notes) if rule else [],
+            "date": inv_date.isoformat(),
+            "groups": [{"jobs": list(dict.fromkeys(l.job.job_number for l in g)), "currency": g[0].currency,
+                        "amount": float(sum(_line_amount(l) for l in g)), "line_ids": [l.id for l in g]} for g in groups]}
+
+
+@r.post("/sales-invoices/from-lines")
+def invoice_from_lines(data: dict, db: Session = Depends(get_db), user: User = Depends(need("write"))):
+    """Create client invoices from selected job lines (one client). With split (default) the lines are divided by
+    the client's invoicing rules; the invoices get consecutive numbers starting with the one given."""
+    lines, client, rule, inv_date, groups = _plan(db, data)
     if any(l.sales_invoice_id for l in lines):
         raise HTTPException(400, "Часть строк уже включена в инвойс")
-    clients = {l.job.client_id for l in lines}
-    currencies = {l.currency for l in lines}
-    if len(clients) != 1 or len(currencies) != 1:
-        raise HTTPException(422, "Все строки должны быть одного клиента и одной валюты")
-    amount = sum(Decimal(l.quantity or 0) * Decimal(l.client_rate or 0) + Decimal(l.overtime_client or 0) for l in lines)
-    inv_date = date.fromisoformat(data["date"]) if data.get("date") else clock.today()
-    inv = SalesInvoice(number=(data.get("number") or "").strip() or next_invoice_number(db, inv_date)[0], date=inv_date,
-                       client_id=clients.pop(), currency=currencies.pop(), amount=amount, status="Not Verified")
-    if not inv.number:
-        raise HTTPException(422, "Укажите номер инвойса (автонумерация ещё не включена)")
-    if db.scalar(select(SalesInvoice).where(SalesInvoice.number == inv.number)):
-        raise HTTPException(409, f"Инвойс {inv.number} уже есть")
-    _bump_counter(db, inv.number)
-    _sales_save(inv, {}, db, user, True)
-    db.add(inv)
-    db.flush()
-    for l in lines:
-        l.sales_invoice_id = inv.id
-    _sales_after(inv, db)
+    if any(len({l.currency for l in g}) != 1 for g in groups):
+        raise HTTPException(422, "Работы в разных валютах — включите разбиение по правилу клиента или выберите одну валюту")
+    first = (data.get("number") or "").strip()
+    m = INV_RE.match(first) if first else None
+    out = []
+    for i, g in enumerate(groups):
+        if i == 0 and first:
+            number = first
+        elif m and not str(get_setting(db, "sales_invoice_last")).strip().isdigit():  # numbers typed by hand: +1
+            number = f"EBFI-{m[1]}-{int(m[2]) + i}"
+        else:
+            number = next_invoice_number(db, inv_date)[0]
+        if not number:
+            raise HTTPException(422, "Укажите номер инвойса (автонумерация ещё не включена)")
+        if db.scalar(select(SalesInvoice).where(SalesInvoice.number == number)):
+            raise HTTPException(409, f"Инвойс {number} уже есть")
+        inv = SalesInvoice(number=number, date=inv_date, client_id=client.id, currency=g[0].currency,
+                           amount=sum(_line_amount(l) for l in g), status="Not Verified")
+        _bump_counter(db, inv.number)
+        _sales_save(inv, {}, db, user, True)
+        db.add(inv)
+        db.flush()
+        for l in g:
+            l.sales_invoice_id = inv.id
+        _sales_after(inv, db)
+        db.flush()
+        out.append(inv)
     _commit(db)
-    return _sales_ser(inv, db)
+    return [_sales_ser(inv, db) for inv in out]
+
+
+# ---------------------------------------------------------------- invoice documents (Word / PDF / Annexure)
+@r.get("/invoice-templates")
+def invoice_templates(_=Depends(need("read"))):
+    return [{"code": x.code, "title": x.title, "notes": list(x.notes)} for x in invoice_rules.RULES.values()]
+
+
+def _inv(db: Session, iid: int) -> SalesInvoice:
+    inv = db.get(SalesInvoice, iid)
+    if not inv or inv.deleted:
+        raise HTTPException(404, "Инвойс не найден")
+    return inv
+
+
+def _protos(db: Session, inv: SalesInvoice) -> list[dict]:
+    """Service rows of the client's template (for marine surveys: loading, lab analysis, draft survey…)."""
+    import io as _io
+    import zipfile as _zip
+
+    from lxml import etree
+    rule = invoice_rules.rule_for(db.get(Client, inv.client_id))
+    if not rule:
+        return []
+    root = etree.fromstring(_zip.ZipFile(_io.BytesIO(invoice_doc.template_bytes(rule.file))).read("word/document.xml"))
+    out = []
+    for tr in root.iter(invoice_doc.W + "tr"):
+        cells = tr.findall(invoice_doc.W + "tc")
+        if len(cells) > 2 and "[Job No]" in invoice_doc._t(cells[0]):
+            desc = [invoice_doc._t(p) for p in invoice_doc._paras(cells[1])]
+            label = " ".join(x for x in desc[:2] if x and "[" not in x) or desc[0]
+            out.append({"idx": len(out), "label": label.strip(), "unit": invoice_doc._t(cells[2]).strip()})
+    return out
+
+
+def _amount_with_extras(db: Session, inv: SalesInvoice) -> Decimal:
+    lines = db.scalars(select(JobLine).where(JobLine.sales_invoice_id == inv.id, JobLine.deleted.is_(False)))
+    base = sum((_line_amount(l) for l in lines), Decimal(0))
+    return base + sum((Decimal(str(x.get("qty") or 0)) * Decimal(str(x.get("rate") or 0)) for x in inv.extra_lines or []), Decimal(0))
+
+
+@r.get("/sales-invoices/{iid}/document")
+def document_info(iid: int, db: Session = Depends(get_db), _=Depends(need("read"))):
+    inv = _inv(db, iid)
+    client = db.get(Client, inv.client_id)
+    rule = invoice_rules.rule_for(client)
+    jobs = list(dict.fromkeys(l.job.job_number for l in db.scalars(select(JobLine).where(JobLine.sales_invoice_id == inv.id))))
+    info = {"template": rule.title if rule else None, "notes": list(rule.notes) if rule else [], "annexure": bool(rule and rule.annexure),
+            "extra_lines": inv.extra_lines or [], "protos": [], "warnings": [], "summary": None, "jobs": jobs,
+            "fx_rate": float(inv.fx_rate) if inv.fx_rate else None, "files_enabled": sharepoint.enabled(),
+            "doc_url": inv.doc_url, "pdf_url": inv.pdf_url, "annex_url": inv.annex_url}
+    if not rule:
+        info["warnings"].append(f"Для клиента «{client.name}» не выбран шаблон инвойса: Справочники → Клиент → «Шаблон инвойса»")
+        return info
+    try:
+        info["protos"] = _protos(db, inv)
+        _, info["warnings"], info["summary"] = invoice_doc.build_docx(db, inv)
+    except invoice_doc.InvoiceError as e:
+        info["warnings"].append(str(e))
+    return info
+
+
+@r.post("/sales-invoices/{iid}/document")
+def document_make(iid: int, data: dict, db: Session = Depends(get_db), user: User = Depends(need("write"))):
+    """Make the Word file, the PDF and (TUV Rheinland) the Annexure, and save them to Outgoing Invoice Register on OneDrive.
+    Making it again replaces the files: a corrected invoice keeps its number."""
+    inv = _inv(db, iid)
+    if "extra_lines" in data:
+        inv.extra_lines = [x for x in (data.get("extra_lines") or [])
+                           if Decimal(str(x.get("qty") or 0)) and Decimal(str(x.get("rate") or 0))] or None
+        inv.amount = _amount_with_extras(db, inv)
+        _sales_save(inv, {}, db, user, False)
+        _sales_after(inv, db)
+        db.flush()
+    try:
+        docx, warnings, summary = invoice_doc.build_docx(db, inv)
+        annex = invoice_doc.build_annexure(db, inv, summary)
+    except invoice_doc.InvoiceError as e:
+        raise HTTPException(422, str(e))
+    try:
+        pdf = invoice_doc.to_pdf(docx, inv.number)
+        if pdf is None:
+            warnings.append("PDF не сделан: на сервере нет LibreOffice")
+    except Exception as e:  # noqa: BLE001
+        pdf = None
+        warnings.append(f"PDF не сделан: {e}")
+    if sharepoint.enabled():
+        try:
+            d = files.save_outgoing(db, inv, f"{inv.number}.docx", docx,
+                                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            inv.doc_url = d.get("webUrl")
+            if pdf:
+                p = files.save_outgoing(db, inv, f"{inv.number}.pdf", pdf, "application/pdf")
+                inv.pdf_url, inv.sp_file_id, inv.sp_file_url = p.get("webUrl"), p.get("id"), p.get("webUrl")
+            elif not inv.sp_file_url:
+                inv.sp_file_id, inv.sp_file_url = d.get("id"), d.get("webUrl")
+            if annex:
+                a = files.save_outgoing(db, inv, f"{inv.number}_Annexure.xlsx", annex,
+                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                inv.annex_url = a.get("webUrl")
+        except sharepoint.GraphError as e:
+            warnings.append(f"OneDrive: {e} — файлы можно скачать кнопками ниже")
+    _commit(db)
+    return {"doc_url": inv.doc_url, "pdf_url": inv.pdf_url, "annex_url": inv.annex_url, "warnings": warnings, "summary": summary,
+            "pdf": bool(pdf), "annexure": bool(annex)}
+
+
+@r.get("/sales-invoices/{iid}/document/{kind}")
+def document_download(iid: int, kind: str, db: Session = Depends(get_db), _=Depends(need("read"))):
+    """Download the generated file directly (works without OneDrive and on the phone)."""
+    inv = _inv(db, iid)
+    try:
+        docx, _, summary = invoice_doc.build_docx(db, inv)
+        if kind == "docx":
+            body, mime, ext = docx, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx"
+        elif kind == "pdf":
+            body, mime, ext = invoice_doc.to_pdf(docx, inv.number), "application/pdf", ".pdf"
+            if body is None:
+                raise HTTPException(404, "PDF недоступен: на сервере нет LibreOffice")
+        elif kind == "xlsx":
+            body = invoice_doc.build_annexure(db, inv, summary)
+            mime, ext = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "_Annexure.xlsx"
+            if body is None:
+                raise HTTPException(404, "Annexure нужен только TUV Rheinland")
+        else:
+            raise HTTPException(404, "docx, pdf или xlsx")
+    except invoice_doc.InvoiceError as e:
+        raise HTTPException(422, str(e))
+    return Response(body, media_type=mime, headers={"Content-Disposition": f'attachment; filename="{inv.number}{ext}"'})
+
+
+@r.post("/files/templates/publish")
+def templates_publish(data: dict | None = None, db: Session = Depends(get_db), _=Depends(need("settings"))):
+    """Put the invoice templates on OneDrive (EBFI/Templates/Invoices) so they can be edited in Word."""
+    if not sharepoint.enabled():
+        raise HTTPException(400, "Хранилище файлов не подключено")
+    try:
+        return {"uploaded": invoice_doc.publish_templates(force=bool((data or {}).get("force")))}
+    except sharepoint.GraphError as e:
+        raise HTTPException(502, f"OneDrive: {e}")
 
 
 # ---------------------------------------------------------------- TDS register

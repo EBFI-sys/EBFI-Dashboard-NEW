@@ -55,7 +55,7 @@ class FakeGraph:
         it["webUrl"] = f"https://od/{i}/{it['name']}"
         return it
 
-    def upload(self, parent, name, content, mime=None):
+    def upload(self, parent, name, content, mime=None, conflict="rename"):
         return self._new(parent, sp.clean(name), folder=False, content=content)
 
     def tree(self, i="root", depth=0):

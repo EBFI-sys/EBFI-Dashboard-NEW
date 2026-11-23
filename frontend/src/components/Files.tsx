@@ -137,6 +137,10 @@ export function StorageSettings() {
         {data?.ok && <button className="btn" onClick={async () => {
           try { const r = await api.post("/files/sync-numbers"); setMsg(`Очереди номеров обновлены по папкам на сервере: ${Object.keys(r.queues).length}`); } catch (e: any) { setMsg(e.message); }
         }}>Сверить номера работ с сервером</button>}
+        {data?.ok && <button className="btn" title="Шаблоны инвойсов в EBFI/Templates/Invoices — их можно править в Word, ERP берёт оттуда"
+          onClick={async () => {
+            try { const r = await api.post("/files/templates/publish", {}); setMsg(r.uploaded.length ? `Шаблонов загружено: ${r.uploaded.length} (EBFI/Templates/Invoices)` : "Шаблоны уже на сервере — существующие файлы не перезаписаны"); } catch (e: any) { setMsg(e.message); }
+          }}>Положить шаблоны инвойсов на OneDrive</button>}
       </div>
       {msg && <p className="muted">{msg}</p>}
     </section>

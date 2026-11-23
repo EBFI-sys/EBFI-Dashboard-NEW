@@ -1,5 +1,5 @@
 import { ClientChip, ColorInput, defaultClientColor } from "../components/Chips";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import CrudTable, { Field } from "../components/CrudTable";
@@ -16,6 +16,10 @@ const clientFields: Field[] = [
   { key: "job_code", label: "Код в Job number (КК)", hint: "26.19-478 → код 19. Номер новой работы присваивается по очереди этого кода" },
   { key: "legal_name", label: "Полное юр. название", wide: true },
   { key: "address", label: "Адрес для инвойса", type: "textarea", list: false, hint: "Юридический адрес клиента — как он будет напечатан в инвойсе" },
+  { key: "invoice_template", label: "Шаблон инвойса", wide: true, text: (r) => r.invoice_template,
+    hint: "Word-шаблон и правила выставления (группировка, GST, WHT). Подставлен по названию клиента — проверьте",
+    render: (r) => <TemplateName code={r.invoice_template} />,
+    input: ({ value, onChange }) => <TemplateSelect value={value} onChange={onChange} /> },
   { key: "is_indian", label: "Клиент из Индии (GST и TDS)", type: "bool" },
   { key: "wht", label: "Удерживает WHT 5% (вычитается при оплате и уменьшает прибыль)", type: "bool" },
   { key: "gstin", label: "GSTIN" },
@@ -112,3 +116,32 @@ function TaxSettings() {
   );
 }
 
+
+let templatesCache: Promise<any[]> | null = null;
+const loadTemplates = () => (templatesCache ??= api.get<any[]>("/invoice-templates"));
+
+function useTemplates() {
+  const [list, setList] = useState<any[]>([]);
+  useEffect(() => { loadTemplates().then(setList).catch(() => setList([])); }, []);
+  return list;
+}
+
+function TemplateName({ code }: { code?: string | null }) {
+  const list = useTemplates();
+  const t = list.find((x) => x.code === code);
+  return t ? <span>{t.code} · {t.title}</span> : <span className="muted">—</span>;
+}
+
+function TemplateSelect({ value, onChange }: { value: any; onChange: (v: any) => void }) {
+  const list = useTemplates();
+  const t = list.find((x) => x.code === value);
+  return (
+    <>
+      <select value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
+        <option value="">— нет шаблона —</option>
+        {list.map((x) => <option key={x.code} value={x.code}>{x.code} · {x.title}</option>)}
+      </select>
+      {t?.notes?.length > 0 && <small>{t.notes.join(" · ")}</small>}
+    </>
+  );
+}

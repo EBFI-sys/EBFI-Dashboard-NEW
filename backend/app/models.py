@@ -86,6 +86,7 @@ class Client(Base, TimestampMixin, SoftDelete):
     is_indian: Mapped[bool] = mapped_column(Boolean, default=False)  # GST and TDS apply only if True
     gstin: Mapped[str | None] = mapped_column(String(20))
     state: Mapped[str | None] = mapped_column(String(60))  # Indian state, for CGST+SGST vs IGST
+    invoice_template: Mapped[str | None] = mapped_column(String(4))  # code of the Word template, app/invoice_rules.py
     default_currency: Mapped[str] = mapped_column(String(3), default="USD")
     job_code: Mapped[str | None] = mapped_column(String(4))
     color: Mapped[str | None] = mapped_column(String(9))  # label colour in the Табель, #rrggbb
@@ -235,6 +236,10 @@ class SalesInvoice(Base, TimestampMixin, SoftDelete):
     sgst: Mapped[Decimal] = mapped_column(Money, default=0)
     igst: Mapped[Decimal] = mapped_column(Money, default=0)
     notes: Mapped[str | None] = mapped_column(Text)
+    extra_lines: Mapped[list | None] = mapped_column(JSON)  # rows added in the invoice dialog (lab analysis, draft survey…)
+    doc_url: Mapped[str | None] = mapped_column(Text)  # Word file on OneDrive
+    pdf_url: Mapped[str | None] = mapped_column(Text)
+    annex_url: Mapped[str | None] = mapped_column(Text)
 
 
 class TdsEntry(Base, TimestampMixin):

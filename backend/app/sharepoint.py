@@ -160,15 +160,16 @@ class Graph:
             body["parentReference"] = {"id": parent_id}
         return self.call("PATCH", f"/drives/{self.drive()}/items/{item_id}", body)
 
-    def upload(self, parent_id: str, name: str, content: bytes, mime: str | None = None) -> dict:
-        """Upload a file; an existing file with that name gets a « 1» suffix rather than being overwritten."""
+    def upload(self, parent_id: str, name: str, content: bytes, mime: str | None = None, conflict: str = "rename") -> dict:
+        """Upload a file; by default an existing file with that name gets a « 1» suffix rather than being overwritten
+        (conflict="replace" overwrites: a regenerated invoice keeps its number and its file)."""
         name = clean(name)
         if len(content) <= 4 * 1024 * 1024:
             q = urllib.parse.quote(name)
             return self.call("PUT", f"/drives/{self.drive()}/items/{parent_id}:/{q}:/content"
-                                    "?@microsoft.graph.conflictBehavior=rename", raw=content, content_type=mime)
+                                    f"?@microsoft.graph.conflictBehavior={conflict}", raw=content, content_type=mime)
         sess = self.call("POST", f"/drives/{self.drive()}/items/{parent_id}:/{urllib.parse.quote(name)}:/createUploadSession",
-                         {"item": {"@microsoft.graph.conflictBehavior": "rename"}})
+                         {"item": {"@microsoft.graph.conflictBehavior": conflict}})
         url, step, total, res = sess["uploadUrl"], 5 * 1024 * 1024, len(content), {}
         for start in range(0, total, step):
             chunk = content[start:start + step]

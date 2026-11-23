@@ -142,6 +142,15 @@ def upload_outgoing(db: Session, inv: SalesInvoice, filename: str, content: byte
     return item
 
 
+def save_outgoing(db: Session, inv: SalesInvoice, name: str, content: bytes, mime: str | None) -> dict:
+    """A generated invoice file into Outgoing Invoice Register / YYYY-MM / <client>, replacing the previous version."""
+    g = sp.graph()
+    client = db.get(Client, inv.client_id)
+    month = inv.date.strftime("%Y-%m") if inv.date else "Без даты"
+    folder = g.path_folder(sp.OUTGOING, month, client.name if client else "Без клиента")
+    return g.upload(folder["id"], name, content, mime, conflict="replace")
+
+
 def server_max(yy: str, code: str) -> int:
     """Highest job number of this client code in Server 20YY, read live (folders made by hand count too)."""
     if not sp.enabled():
