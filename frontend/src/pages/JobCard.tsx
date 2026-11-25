@@ -412,7 +412,7 @@ function ExtendJob({ job, onClose, onDone }: { job: any; onClose: () => void; on
       {data && (
         <div className="form-grid">
           <p className="wide muted small">Создаётся новая работа за {monthLabel(data.next_month)} с тем же клиентом, заводом, страной, инспекторами и ставками.
-            Эта работа остаётся с днями по {monthLabel(data.month)} включительно, получает статус «Завершен» и ждёт инвойса. Overtime, файлы и инвойсы остаются здесь.</p>
+            Эта работа остаётся с днями по {monthLabel(data.month)} включительно, её статус не меняется — завершите её, когда пройдут её даты. Overtime, файлы и инвойсы остаются здесь.</p>
           <label className="field wide"><span>Номер новой работы</span>
             <input className="mono" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="26.31-17" />
             <small>Следующий свободный в очереди клиента; можно изменить</small></label>

@@ -849,7 +849,7 @@ def extend_preview(jid: int, db: Session = Depends(get_db), _=Depends(need("read
 @r.post("/jobs/{jid}/extend")
 def extend_job(jid: int, data: dict, db: Session = Depends(get_db), user: User = Depends(need("write"))):
     """The job goes on next month: a new job with a new number from the client's queue and the same client,
-    inspectors, place and rates; this one keeps only its days up to the end of the month and becomes «Завершен».
+    inspectors, place and rates; this one keeps only its days up to the end of the month and its status.
     Overtime, files and invoices stay with the old job. Body: job_number?, grps?: [1, 2], dates_text? (new month)."""
     job = db.get(Job, jid)
     if not job or job.deleted:
@@ -897,7 +897,7 @@ def extend_job(jid: int, data: dict, db: Session = Depends(get_db), user: User =
                 l.deleted = True
     if not any(not l.deleted for l in job.lines):
         raise HTTPException(400, "У старой работы не остаётся дней в этом месяце — просто измените её даты")
-    job.status = "Завершен"
+    # the status is not changed: the days of this month may still be ahead; the manager closes the job as usual
     job.notes = "\n".join(x for x in [job.notes or "", f"Продолжена как {number}"] if x)
     _commit(db)
     files.ensure_job_folder(db, new)
