@@ -186,6 +186,14 @@ def job_dict(job: Job, db: Session, ctx: Context, with_lines: bool = False, mont
         t["base_inr"] += c["base_inr"] or 0
         t["net_inr"] += c["net_inr"] or 0
     d["assignments"] = assignments(job, db, ctx)
+    # «Продолжение работы 26.31-01» / «Продолжена как 26.31-17»: links between the months of one job
+    links = {}
+    for label, pat in (("continues", r"Продолжение работы (\S+)"), ("continued_as", r"Продолжена как (\S+)")):
+        m = re.search(pat, job.notes or "")
+        if m:
+            other = db.scalar(select(Job).where(Job.job_number == m[1], Job.deleted.is_(False)))
+            links[label] = {"id": other.id, "job_number": other.job_number} if other else None
+    d.update(continues=links.get("continues"), continued_as=links.get("continued_as"))
     d["files_enabled"] = sharepoint.enabled()
     if month:
         d["view"] = _view(job, lines, month)
@@ -794,3 +802,104 @@ def normalize_dates(data: dict, _=Depends(need("read"))):
         import datetime as _dt
         return {"text": format_dates([_dt.date.fromisoformat(x) for x in data["dates"]])}
     return {"dates": [d.isoformat() for d in parse_dates(data.get("text"), data.get("month"))]}
+
+
+# ---------------------------------------------------------------- continue a job in the next month under a new number
+def _next_month(m: str) -> str:
+    y, mo = int(m[:4]), int(m[5:7])
+    return f"{y + mo // 12}-{mo % 12 + 1:02d}"
+
+
+def _extend_split(job: Job) -> tuple[str, dict[int, dict]]:
+    """The month being closed (the job's last month, but not later than the current one) and, per inspector,
+    the days up to its end and the days after it."""
+    lines = [l for l in job.lines if not l.deleted]
+    if not lines:
+        raise HTTPException(400, "У работы нет инспектора и дат")
+    month = min(max(l.month for l in lines), _this_month())
+    if not any(d.strftime("%Y-%m") <= month for l in lines for d in parse_dates(l.dates_text, l.month)):
+        month = min(l.month for l in lines)  # a job booked ahead (all its days next month): it closes its own first month
+    groups: dict[int, dict] = {}
+    for l in sorted(lines, key=lambda x: x.month):
+        g = groups.setdefault(l.grp or 1, {"lines": [], "keep": [], "move": []})
+        g["lines"].append(l)
+        for d in parse_dates(l.dates_text, l.month):
+            (g["keep"] if d.strftime("%Y-%m") <= month else g["move"]).append(d)
+    return month, groups
+
+
+@r.get("/jobs/{jid}/extend")
+def extend_preview(jid: int, db: Session = Depends(get_db), _=Depends(need("read"))):
+    job = db.get(Job, jid)
+    if not job or job.deleted:
+        raise HTTPException(404, "Работа не найдена")
+    month, groups = _extend_split(job)
+    insp = {i.id: i.name for i in db.scalars(select(Inspector))}
+    try:
+        number = next_job_number(db, job.client_id)
+    except HTTPException:
+        number = None
+    return {"month": month, "next_month": _next_month(month), "number": number,
+            "assignments": [{"grp": g, "inspector_id": v["lines"][-1].inspector_id, "inspector_name": insp.get(v["lines"][-1].inspector_id),
+                             "keep": format_dates(sorted(set(v["keep"]))) if v["keep"] else None,
+                             "move": format_dates(sorted(set(v["move"]))) if v["move"] else None}
+                            for g, v in sorted(groups.items())]}
+
+
+@r.post("/jobs/{jid}/extend")
+def extend_job(jid: int, data: dict, db: Session = Depends(get_db), user: User = Depends(need("write"))):
+    """The job goes on next month: a new job with a new number from the client's queue and the same client,
+    inspectors, place and rates; this one keeps only its days up to the end of the month and becomes «Завершен».
+    Overtime, files and invoices stay with the old job. Body: job_number?, grps?: [1, 2], dates_text? (new month)."""
+    job = db.get(Job, jid)
+    if not job or job.deleted:
+        raise HTTPException(404, "Работа не найдена")
+    month, groups = _extend_split(job)
+    grps = [int(g) for g in (data.get("grps") or groups.keys()) if int(g) in groups]
+    if not grps:
+        raise HTTPException(422, "Отметьте хотя бы одного инспектора для новой работы")
+    typed = (data.get("dates_text") or "").strip()
+    if typed and not parse_dates(typed, _next_month(month)):
+        raise HTTPException(422, f"Не понял даты «{typed}» — например 01-05.12.2026")
+    for g in grps:
+        if not typed and not groups[g]["move"]:
+            raise HTTPException(422, f"Укажите даты работы в {_next_month(month)} — работа в Табеле не может быть без дат")
+    number = (data.get("job_number") or "").strip() or next_job_number(db, job.client_id)
+    if not JOB_RE.match(number):
+        raise HTTPException(422, "Job number должен быть в формате ГГ.КК-ННН, например 26.19-478")
+    if db.scalar(select(Job).where(Job.job_number == number)):
+        raise HTTPException(409, f"Работа {number} уже есть в Табеле")
+
+    new = Job(job_number=number, client_id=job.client_id, client_contact=job.client_contact,
+              client_job_number=job.client_job_number, vendor=job.vendor, country=job.country, owner_id=job.owner_id,
+              status="В работе", service_type=job.service_type, equipment=job.equipment, cargo=job.cargo,
+              notes="\n".join(x for x in [f"Продолжение работы {job.job_number}", job.notes or ""] if x))
+    db.add(new)
+    db.flush()
+    for i, g in enumerate(grps, start=1):
+        last = groups[g]["lines"][-1]
+        vals = {k: getattr(last, k) for k in ("inspector_id", "unit", "currency", "client_rate", "inspector_rate",
+                                             "inspector_currency", "no_subcontractor", "payment_method_id")}
+        vals["dates_text"] = typed or format_dates(sorted(set(groups[g]["move"])))
+        vals["quantity"] = None
+        sync_assignment(db, new, i, vals, strict=False, user=user)
+
+    # the old job keeps its days up to the end of the month
+    for g, v in groups.items():
+        if not v["move"]:
+            continue
+        if v["keep"]:
+            sync_assignment(db, job, g, {"dates_text": format_dates(sorted(set(v["keep"]))), "quantity": None}, strict=False, user=user)
+        else:  # this inspector only had days in the new month
+            if any(l.sales_invoice_id for l in v["lines"]):
+                raise HTTPException(400, "Строки этой работы уже в инвойсе клиенту — даты нового месяца из неё убрать нельзя")
+            for l in v["lines"]:
+                l.deleted = True
+    if not any(not l.deleted for l in job.lines):
+        raise HTTPException(400, "У старой работы не остаётся дней в этом месяце — просто измените её даты")
+    job.status = "Завершен"
+    job.notes = "\n".join(x for x in [job.notes or "", f"Продолжена как {number}"] if x)
+    _commit(db)
+    files.ensure_job_folder(db, new)
+    files.ensure_job_folder(db, job)
+    return job_dict(new, db, Context(db))

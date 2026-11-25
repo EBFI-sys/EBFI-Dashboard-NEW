@@ -131,6 +131,7 @@ export default function JobCard() {
   useEffect(() => setJ(j0), [j0]);
   const [editJob, setEditJob] = useState(false);
   const [remove, setRemove] = useState<null | "request" | "delete">(null);
+  const [extend, setExtend] = useState(false);
   const nav = useNavigate();
   const loc = useLocation();
   const [toast, setToast] = useState<string | null>(null);
@@ -187,10 +188,18 @@ export default function JobCard() {
             <Link to="/jobs">Табель</Link> /
           </p>
           <h1 className="mono">{j.job_number} <Pill status={j.status} /></h1>
+          {(j.continues || j.continued_as) && (
+            <p className="job-chain">
+              {j.continues && <>Продолжение работы <Link className="mono" to={`/jobs/${j.continues.id}`}>{j.continues.job_number}</Link></>}
+              {j.continues && j.continued_as && " · "}
+              {j.continued_as && <>Продолжена как <Link className="mono" to={`/jobs/${j.continued_as.id}`}>{j.continued_as.job_number}</Link></>}
+            </p>
+          )}
         </div>
         <div className="head-actions">
           <CurrencySwitch />
           {can("write") && <button className="btn" onClick={() => setEditJob(true)}>Изменить данные работы</button>}
+          {can("write") && <button className="btn" onClick={() => setExtend(true)} title="Работа продолжается в следующем месяце: новая работа с новым номером, эта завершается">Продлить на следующий месяц</button>}
           {can("write") && <button className="btn ghost" onClick={() => setRemove("request")}>Вернуть в заявки</button>}
           {can("delete_work") && <button className="btn ghost danger-text" onClick={() => setRemove("delete")}>Удалить</button>}
         </div>
@@ -276,6 +285,7 @@ export default function JobCard() {
           await api.patch(`/jobs/${j.id}`, body); setEditJob(false); setToast("Сохранено"); reload();
         }} />}
       {remove && <RemoveJob job={j} mode={remove} onClose={() => setRemove(null)} onDone={(to) => nav(to)} />}
+      {extend && <ExtendJob job={j} onClose={() => setExtend(false)} onDone={(id) => { setExtend(false); nav(`/jobs/${id}`); }} />}
       <Toast text={toast} onDone={() => setToast(null)} />
     </div>
   );
@@ -370,5 +380,66 @@ function StatusSwitch({ j, canWrite, onSaved }: { j: any; canWrite: boolean; onS
       {j.status !== "Завершен" && j.dates_passed && <small className="late-hint">Все даты прошли — завершите работу</small>}
       {err && <small className="error">{err}</small>}
     </>
+  );
+}
+
+/** The job goes on next month: a new job (new number, same client, inspectors, place and rates); this one is closed
+ *  with its days up to the end of the month and stays to be invoiced. */
+function ExtendJob({ job, onClose, onDone }: { job: any; onClose: () => void; onDone: (id: number) => void }) {
+  const { data, error } = useAsync(() => api.get(`/jobs/${job.id}/extend`), [job.id]);
+  const [number, setNumber] = useState("");
+  const [grps, setGrps] = useState<Set<number> | null>(null);
+  const [dates, setDates] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!data) return;
+    setNumber((n) => n || data.number || "");
+    setGrps((g) => g ?? new Set<number>(data.assignments.map((a: any) => a.grp)));
+  }, [data]);
+  const chosen = (data?.assignments ?? []).filter((a: any) => grps?.has(a.grp));
+  const needDates = chosen.some((a: any) => !a.move);
+  const go = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const nj = await api.post(`/jobs/${job.id}/extend`, { job_number: number, grps: [...(grps ?? [])], dates_text: dates || undefined });
+      onDone(nj.id);
+    } catch (e: any) { setErr(e.message); setBusy(false); }
+  };
+  return (
+    <Modal title={`Продлить ${job.job_number} на следующий месяц`} onClose={onClose}>
+      <ErrorLine error={error} />
+      {data && (
+        <div className="form-grid">
+          <p className="wide muted small">Создаётся новая работа за {monthLabel(data.next_month)} с тем же клиентом, заводом, страной, инспекторами и ставками.
+            Эта работа остаётся с днями по {monthLabel(data.month)} включительно, получает статус «Завершен» и ждёт инвойса. Overtime, файлы и инвойсы остаются здесь.</p>
+          <label className="field wide"><span>Номер новой работы</span>
+            <input className="mono" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="26.31-17" />
+            <small>Следующий свободный в очереди клиента; можно изменить</small></label>
+          <div className="field wide"><span>Инспекторы в новой работе</span>
+            <div className="pick-list">
+              {data.assignments.map((a: any) => (
+                <label key={a.grp} className="check">
+                  <input type="checkbox" checked={grps?.has(a.grp) ?? false} onChange={() => { const n = new Set(grps ?? []); n.has(a.grp) ? n.delete(a.grp) : n.add(a.grp); setGrps(n); }} />
+                  <span>{a.inspector_name ?? "без инспектора"}
+                    <small className="muted"> · остаётся: {a.keep ?? "—"}{a.move ? ` · перейдёт: ${a.move}` : ""}</small></span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <label className="field wide"><span>Даты в {monthLabel(data.next_month).toLowerCase()}{needDates ? " *" : ""}</span>
+            <input value={dates} onChange={(e) => setDates(e.target.value)} placeholder="01-05.12.2026" />
+            <small>{needDates ? "Даты следующего месяца ещё не внесены — укажите их" : "Пусто — перейдут даты, уже внесённые на следующий месяц; если указать, будут у всех отмеченных инспекторов"}</small>
+          </label>
+          {dates && <BusyWarning inspectorIds={chosen.map((a: any) => a.inspector_id)} datesText={dates} excludeJobId={job.id} />}
+          <ErrorLine error={err} />
+          <div className="form-actions wide">
+            <button className="btn ghost" onClick={onClose}>Отмена</button>
+            <button className="btn primary" disabled={busy || !number || !chosen.length || (needDates && !dates.trim())} onClick={go}>
+              {busy ? "Создаю…" : `Создать ${number || "работу"}`}</button>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
